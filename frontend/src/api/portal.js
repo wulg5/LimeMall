@@ -75,3 +75,13 @@ export function receiveOrder(id) {
 export function refundOrder(id, data) {
   return request.post(`/portal/orders/${id}/refund`, data)
 }
+
+/* ---------------- 客服聊天 ---------------- */
+
+export function getChatMessages() {
+  return request.get('/portal/chat/messages')
+}
+
+export function sendChatMessage(content) {
+  return request.post('/portal/chat/messages', { content })
+}

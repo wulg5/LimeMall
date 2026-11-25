@@ -13,6 +13,7 @@
           <router-link to="/shop/products" active-class="active">全部商品</router-link>
           <router-link to="/shop/coupons" active-class="active">领券中心</router-link>
           <router-link to="/shop/orders" active-class="active">我的订单</router-link>
+          <router-link v-if="shopStore.token" to="/shop/member" active-class="active">会员中心</router-link>
         </nav>
 
         <div class="shop-search">
@@ -40,7 +41,8 @@
                 <el-dropdown-item disabled>
                   {{ levelText }}
                 </el-dropdown-item>
-                <el-dropdown-item command="orders" divided>我的订单</el-dropdown-item>
+                <el-dropdown-item command="member" divided>会员中心</el-dropdown-item>
+                <el-dropdown-item command="orders">我的订单</el-dropdown-item>
                 <el-dropdown-item command="coupons">我的优惠券</el-dropdown-item>
                 <el-dropdown-item command="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
@@ -63,8 +65,11 @@
     <!-- 页脚 -->
     <footer class="shop-footer">
       青柠商城 LimeMall · 软件工程课程设计作品 · 后台管理入口
-      <router-link to="/login" class="admin-link">管理端</router-link>
+      <router-link to="/admin/login" class="admin-link">管理端</router-link>
     </footer>
+
+    <!-- 悬浮客服 -->
+    <shop-chat-widget />
   </div>
 </template>
 
@@ -76,6 +81,7 @@ import { ArrowDown, Search, ShoppingCart } from '@element-plus/icons-vue'
 import { useShopStore } from '@/stores/shop'
 import { useCartStore } from '@/stores/cart'
 import { MEMBER_LEVEL } from '@/utils/format'
+import ShopChatWidget from '@/components/ShopChatWidget.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -101,7 +107,9 @@ function handleSearch() {
 }
 
 async function handleCommand(command) {
-  if (command === 'orders') {
+  if (command === 'member') {
+    router.push('/shop/member')
+  } else if (command === 'orders') {
     router.push('/shop/orders')
   } else if (command === 'coupons') {
     router.push('/shop/coupons?tab=mine')

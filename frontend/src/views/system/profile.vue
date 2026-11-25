@@ -92,7 +92,7 @@ async function handleSave() {
     await updatePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword })
     ElMessage.success('密码修改成功，请重新登录')
     userStore.logout()
-    router.push('/login')
+    router.push('/admin/login')
   } finally {
     saving.value = false
   }

@@ -1,6 +1,7 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.limemall.common.BusinessException;
 import com.limemall.common.PageResult;
@@ -82,6 +83,7 @@ public class OrderReturnService {
 
     /**
      * 管理员审核退款申请。
+     * 并发安全：先以条件更新（status=0）抢占审核权，再执行库存/优惠券回补与关单。
      */
     @Transactional
     public void handle(Long id, ReturnHandleDTO dto) {
@@ -89,10 +91,17 @@ public class OrderReturnService {
         if (ret == null) {
             throw new BusinessException("退款申请不存在");
         }
-        if (ret.getStatus() != 0) {
+        boolean approve = Boolean.TRUE.equals(dto.getApprove());
+        int claimed = returnMapper.update(null, new LambdaUpdateWrapper<OmsOrderReturn>()
+                .set(OmsOrderReturn::getStatus, approve ? 1 : 2)
+                .set(OmsOrderReturn::getHandleNote, dto.getHandleNote())
+                .set(OmsOrderReturn::getHandleTime, LocalDateTime.now())
+                .eq(OmsOrderReturn::getId, id)
+                .eq(OmsOrderReturn::getStatus, 0));
+        if (claimed == 0) {
             throw new BusinessException("该申请已处理，请勿重复操作");
         }
-        if (Boolean.TRUE.equals(dto.getApprove())) {
+        if (approve) {
             OmsOrder order = orderMapper.selectById(ret.getOrderId());
             if (order == null) {
                 throw new BusinessException("关联订单不存在");
@@ -101,20 +110,17 @@ public class OrderReturnService {
                     && order.getStatus() != OrderService.STATUS_SHIPPED) {
                 throw new BusinessException("当前订单状态不允许退款（仅待发货/已发货订单支持）");
             }
-            // 回补库存/销量/优惠券，并关闭订单
+            // 回补库存/销量/优惠券，并条件关闭订单
             orderService.restoreStockAndCoupon(order);
-            OmsOrder update = new OmsOrder();
-            update.setId(order.getId());
-            update.setStatus(OrderService.STATUS_CLOSED);
-            update.setCloseTime(LocalDateTime.now());
-            orderMapper.updateById(update);
-            ret.setStatus(1);
-        } else {
-            ret.setStatus(2);
+            int closed = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                    .set(OmsOrder::getStatus, OrderService.STATUS_CLOSED)
+                    .set(OmsOrder::getCloseTime, LocalDateTime.now())
+                    .eq(OmsOrder::getId, order.getId())
+                    .in(OmsOrder::getStatus, OrderService.STATUS_UNSHIPPED, OrderService.STATUS_SHIPPED));
+            if (closed == 0) {
+                throw new BusinessException("订单状态已变更，请刷新后重试");
+            }
         }
-        ret.setHandleNote(dto.getHandleNote());
-        ret.setHandleTime(LocalDateTime.now());
-        returnMapper.updateById(ret);
     }
 
     /**

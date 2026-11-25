@@ -64,19 +64,19 @@ const userStore = useUserStore()
 
 /** 当前高亮菜单：商品编辑页归属商品列表 */
 const activeMenu = computed(() =>
-  route.path.startsWith('/product/edit') ? '/product/list' : route.path
+  route.path.startsWith('/admin/product/edit') ? '/admin/product/list' : route.path
 )
 
 async function handleCommand(command) {
   if (command === 'profile') {
-    router.push('/system/profile')
+    router.push('/admin/system/profile')
     return
   }
   if (command === 'logout') {
     try {
       await ElMessageBox.confirm('确定退出登录吗？', '提示', { type: 'warning' })
       userStore.logout()
-      router.push('/login')
+      router.push('/admin/login')
     } catch (e) {
       /* 取消退出 */
     }

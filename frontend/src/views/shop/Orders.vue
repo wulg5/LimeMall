@@ -32,6 +32,7 @@
         <div class="order-footer">
           <div class="amount-info">
             实付金额：<b>{{ money(order.payAmount) }}</b>
+            <span v-if="order.status === 0" class="pay-tip">{{ remainText(order) }}</span>
           </div>
           <div class="order-actions">
             <el-button size="small" @click="openDetail(order)">订单详情</el-button>
@@ -59,10 +60,14 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { cancelOrder, getMyOrders, payOrder, receiveOrder, refundOrder } from '@/api/portal'
 import { money, ORDER_STATUS } from '@/utils/format'
+
+/** 与后端 limemall.order.pay-timeout-minutes 保持一致（默认 30 分钟） */
+const PAY_TIMEOUT_MINUTES = 30
 
 const activeTab = ref('all')
 const list = ref([])
@@ -70,7 +75,43 @@ const total = ref(0)
 const pageNum = ref(1)
 const pageSize = ref(5)
 
-onMounted(load)
+const nowTs = ref(Date.now())
+let tickTimer = null
+let expireRefreshScheduled = false
+
+onMounted(() => {
+  load()
+  tickTimer = setInterval(tick, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (tickTimer) clearInterval(tickTimer)
+})
+
+function tick() {
+  nowTs.value = Date.now()
+  // 出现超时的待付款订单：等后端定时任务关单后自动刷新一次列表
+  if (!expireRefreshScheduled) {
+    const expired = list.value.some((order) => order.status === 0
+      && dayjs(order.createTime).add(PAY_TIMEOUT_MINUTES, 'minute').valueOf() <= nowTs.value)
+    if (expired) {
+      expireRefreshScheduled = true
+      setTimeout(() => load(), 65_000)
+    }
+  }
+}
+
+/** 待付款订单剩余支付时间文案 */
+function remainText(order) {
+  const deadline = dayjs(order.createTime).add(PAY_TIMEOUT_MINUTES, 'minute')
+  const remain = deadline.valueOf() - nowTs.value
+  if (remain <= 0) {
+    return '已超时，系统即将自动关闭订单'
+  }
+  const minutes = Math.floor(remain / 60000)
+  const seconds = Math.floor((remain % 60000) / 1000)
+  return `剩余支付时间 ${minutes}:${String(seconds).padStart(2, '0')}，超时自动取消`
+}
 
 async function load() {
   const data = await getMyOrders({
@@ -237,6 +278,15 @@ async function openRefund(order) {
 .amount-info b {
   color: #dc2626;
   font-size: 17px;
+}
+
+.pay-tip {
+  margin-left: 14px;
+  color: #d97706;
+  font-size: 12.5px;
+  background: #fffbeb;
+  padding: 3px 10px;
+  border-radius: 8px;
 }
 
 .order-actions {

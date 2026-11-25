@@ -38,19 +38,25 @@ public class AuthService {
     private final UmsMenuMapper menuMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final LoginAttemptService loginAttemptService;
 
     /**
      * 管理员登录：校验账号密码与状态，签发 JWT 令牌。
+     * 安全：连续失败 5 次锁定 10 分钟，抵御暴力破解。
      */
     public LoginVO login(LoginDTO dto) {
+        String attemptKey = "admin:" + dto.getUsername();
+        loginAttemptService.checkBlocked(attemptKey);
         UmsAdmin admin = adminMapper.selectOne(new LambdaQueryWrapper<UmsAdmin>()
                 .eq(UmsAdmin::getUsername, dto.getUsername()));
         if (admin == null || !passwordEncoder.matches(dto.getPassword(), admin.getPassword())) {
+            loginAttemptService.recordFailure(attemptKey);
             throw new BusinessException("账号或密码错误");
         }
         if (admin.getStatus() != 1) {
             throw new BusinessException("账号已被禁用，请联系超级管理员");
         }
+        loginAttemptService.clear(attemptKey);
         String token = jwtUtil.createToken(admin.getId(), admin.getUsername(), LoginUser.TYPE_ADMIN);
         return new LoginVO(token, admin.getUsername(), admin.getNickname());
     }

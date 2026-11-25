@@ -43,7 +43,7 @@ request.interceptors.response.use(
       } else {
         useUserStore().logout()
         ElMessage.error(res.message || '登录已过期，请重新登录')
-        window.location.href = '/login'
+        window.location.href = '/admin/login'
       }
       return Promise.reject(new Error(res.message))
     }

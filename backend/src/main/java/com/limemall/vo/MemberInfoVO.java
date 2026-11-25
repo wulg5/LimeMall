@@ -22,4 +22,7 @@ public class MemberInfoVO {
     private Integer level;
 
     private Integer points;
+
+    /** 升级到下一等级所需积分（钻石会员为 null） */
+    private Integer nextLevelPoints;
 }

@@ -1,7 +1,7 @@
 # 青柠商城管理系统 · CentOS 服务器部署指南
 
 > 目标：把本地开发完成的 LimeMall 部署到 CentOS（7.9 / 8 / Stream 9 均可）云服务器，通过 Nginx 对外提供访问。
-> 架构：Nginx（80 端口，静态前端 + 反向代理）→ Spring Boot（8080，仅本机监听）→ MySQL（3306，仅本机监听）。
+> 架构：Nginx（80 端口，静态前端 + 反向代理）→ Spring Boot（18080，仅本机监听）→ MySQL（3306，仅本机监听）。
 
 ## 一、环境准备
 
@@ -110,6 +110,10 @@ Environment=MYSQL_PASSWORD=YOUR_DB_PASSWORD
 Environment=JWT_SECRET=请替换为你自己的至少32位随机密钥字符串
 # 上传目录（注意是可写目录）
 Environment=LIME_UPLOAD_DIR=/opt/limemall/uploads
+# 应用端口（默认 18080，可按需修改）
+Environment=SERVER_PORT=18080
+# 未支付订单自动关闭时限（分钟，默认 30）
+Environment=ORDER_PAY_TIMEOUT_MINUTES=30
 ExecStart=/opt/jdk-21/bin/java -Xms256m -Xmx512m -jar /opt/limemall/limemall-backend.jar
 Restart=always
 RestartSec=5
@@ -127,7 +131,7 @@ sudo journalctl -u limemall-backend -f
 # 看到 "Started LimeMallApplication" 即成功；首次启动会自动初始化密码与演示订单
 ```
 
-> 8080 端口不需要对公网开放（Nginx 在本机反代即可，无需改防火墙）。
+> 18080 端口不需要对公网开放（Nginx 在本机反代即可，无需改防火墙）。
 
 ## 三、部署前端静态站点
 
@@ -169,7 +173,7 @@ server {
 
     # 后端接口：/api/** -> Spring Boot（注意 proxy_pass 末尾斜杠会去掉 /api 前缀）
     location /api/ {
-        proxy_pass http://127.0.0.1:8080/;
+        proxy_pass http://127.0.0.1:18080/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -200,8 +204,8 @@ sudo firewall-cmd --reload
 
 ## 四、验证
 
-1. 浏览器访问 `http://YOUR_SERVER_IP/login` → 后台登录（admin / admin123）
-2. 访问 `http://YOUR_SERVER_IP/shop` → 商城前台（m001 / 123456 或现场注册）
+1. 浏览器访问 `http://YOUR_SERVER_IP/` → 商城前台主站；`http://YOUR_SERVER_IP/admin/login` → 后台管理（admin / admin123）
+2. 前台会员登录（m001 / 123456 或现场注册），验证下单、客服聊天、会员中心
 3. 后台改一张商品图 → 前台可见（验证上传目录与 /uploads 映射）
 4. 前台下单 → 后台看板与订单列表实时出现新订单
 
@@ -210,7 +214,7 @@ sudo firewall-cmd --reload
 | 现象 | 排查 |
 |------|------|
 | 后端启动报数据库连接失败 | 确认 MySQL 已启动、库 `lime_mall` 已导入、`MYSQL_PASSWORD` 环境变量正确（`journalctl -u limemall-backend` 查看日志） |
-| 页面能开但接口 502 | 后端未启动或端口不对：`curl http://127.0.0.1:8080/portal/public/home` 在服务器本机验证 |
+| 页面能开但接口 502 | 后端未启动或端口不对：`curl http://127.0.0.1:18080/portal/public/home` 在服务器本机验证 |
 | 登录后刷新 404 | Nginx 缺少 `try_files ... /index.html` 回退 |
 | 上传图片后 404 | 检查 `/opt/limemall/uploads` 存在且 Nginx `alias` 路径尾斜杠一致；SELinux 开启时可 `chmod 755 /opt/limemall/uploads` 或临时 `setenforce 0` 验证 |
 | 中文乱码 | 数据库导入时未使用 utf8mb4：用 `--default-character-set=utf8mb4` 重新导入 init.sql |

@@ -89,7 +89,7 @@ async function handleLogin() {
     await userStore.login(form)
     await userStore.fetchInfo()
     ElMessage.success('登录成功，欢迎回来')
-    router.push(route.query.redirect || '/dashboard')
+    router.push(route.query.redirect || '/admin/dashboard')
   } finally {
     loading.value = false
   }

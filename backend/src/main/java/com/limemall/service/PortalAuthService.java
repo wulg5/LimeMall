@@ -8,6 +8,7 @@ import com.limemall.entity.UmsMember;
 import com.limemall.mapper.UmsMemberMapper;
 import com.limemall.security.JwtUtil;
 import com.limemall.security.LoginUser;
+import com.limemall.util.MemberLevels;
 import com.limemall.vo.LoginVO;
 import com.limemall.vo.MemberInfoVO;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class PortalAuthService {
     private final UmsMemberMapper memberMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final LoginAttemptService loginAttemptService;
 
     /**
      * 会员注册：账号/手机号唯一，默认普通会员。
@@ -59,22 +61,26 @@ public class PortalAuthService {
     }
 
     /**
-     * 会员登录：签发 MEMBER 类型 JWT。
+     * 会员登录：签发 MEMBER 类型 JWT。连续失败 5 次锁定 10 分钟。
      */
     public LoginVO login(LoginDTO dto) {
+        String attemptKey = "member:" + dto.getUsername();
+        loginAttemptService.checkBlocked(attemptKey);
         UmsMember member = memberMapper.selectOne(new LambdaQueryWrapper<UmsMember>()
                 .eq(UmsMember::getUsername, dto.getUsername()));
         if (member == null || !passwordEncoder.matches(dto.getPassword(), member.getPassword())) {
+            loginAttemptService.recordFailure(attemptKey);
             throw new BusinessException("账号或密码错误");
         }
         if (member.getStatus() != 1) {
             throw new BusinessException("账号已被禁用，请联系平台客服");
         }
+        loginAttemptService.clear(attemptKey);
         String token = jwtUtil.createToken(member.getId(), member.getUsername(), LoginUser.TYPE_MEMBER);
         return new LoginVO(token, member.getUsername(), member.getNickname());
     }
 
-    /** 当前会员信息 */
+    /** 当前会员信息（含升级进度） */
     public MemberInfoVO me(Long memberId) {
         UmsMember member = memberMapper.selectById(memberId);
         if (member == null) {
@@ -88,6 +94,7 @@ public class PortalAuthService {
         vo.setPhone(member.getPhone());
         vo.setLevel(member.getLevel());
         vo.setPoints(member.getPoints());
+        vo.setNextLevelPoints(MemberLevels.nextLevelPoints(member.getPoints()));
         return vo;
     }
 }

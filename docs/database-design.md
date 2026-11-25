@@ -22,7 +22,9 @@ ums_member ──< oms_order ──< oms_order_item
      │             │
      │             └──< oms_order_return
      │
-     └──< sms_coupon_member >──  sms_coupon
+     ├──< sms_coupon_member >──  sms_coupon
+     │
+     └──< ums_chat_message（客服会话）
 
 pms_category ──< pms_product ──< pms_sku
 pms_brand    ──< pms_product
@@ -53,6 +55,7 @@ pms_brand    ──< pms_product
 | 13 | `oms_order_return` | 退款申请 | 状态 `0待审核/1已通过/2已拒绝`；审核动作与订单状态联动（通过则订单关闭、库存回补） |
 | 14 | `sms_coupon` | 优惠券 | `type` 区分满减券/折扣券；`receive_count/used_count` 计数冗余；`per_limit` 每人限领 |
 | 15 | `sms_coupon_member` | 会员优惠券 | 领取记录 + 使用状态 + 关联订单，支撑"我的优惠券"与核销追溯 |
+| 16 | `ums_chat_message` | 客服聊天消息 | `from_type` 区分发送方（会员/管理员）；读历史即按接收方标记已读；纯文本存储防 XSS |
 
 ## 四、关键业务建模说明
 
@@ -84,6 +87,17 @@ SPU（Standard Product Unit）描述"商品是什么"，SKU（Stock Keeping Unit
 - 折扣券：`type=2`，`amount` 为折扣（如 9.5 表示 95 折），按 `total_amount × amount / 10` 计算抵扣；
 - 领取动作对 `sms_coupon.receive_count` 做条件更新（`receive_count < total_count`）防超发；
 - 每人限领校验 `sms_coupon_member` 中该会员该券的领取条数。
+
+### 4.5 会员成长体系
+- 积分：支付成功按 `实付金额 × 等级倍率` 累计（1 元 = 1 积分；金卡 ×2、钻石 ×3）；
+- 等级按累计积分自动计算（单一事实来源，后端 `MemberLevels` 常量）：
+  `普通 0 / 银卡 500 / 金卡 2000 / 钻石 5000`；
+- 等级与积分冗余评估：等级可由积分实时推导，选择落库是为了管理端列表免计算且便于运营调整，写入点统一在支付事务内。
+
+### 4.6 订单超时关单
+- 定时任务每 60 秒扫描 `status=0 且 create_time < NOW() - 支付时限` 的订单；
+- 单笔关单在独立事务中执行：条件更新状态（`eq status=0` 防并发）→ 回补 SKU/SPU 库存 → 回退销量 → 恢复优惠券；
+- 支付时限由 `ORDER_PAY_TIMEOUT_MINUTES` 配置（默认 30 分钟），与前台倒计时展示口径一致。
 
 ## 五、索引设计要点
 

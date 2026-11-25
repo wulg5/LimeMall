@@ -313,6 +313,24 @@ CREATE TABLE `sms_coupon_member` (
   KEY `idx_coupon` (`coupon_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会员优惠券表';
 
+-- ---------------------------------------------------------------------
+-- 16. ums_chat_message 客服聊天消息表
+--     from_type：1会员 2管理员；读取历史时按接收方标记已读
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `ums_chat_message`;
+CREATE TABLE `ums_chat_message` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `member_id`   BIGINT UNSIGNED NOT NULL COMMENT '会员ID（会话归属）',
+  `admin_id`    BIGINT UNSIGNED DEFAULT NULL COMMENT '接待管理员ID（会员消息为空）',
+  `from_type`   TINYINT      NOT NULL COMMENT '发送方：1会员 2管理员',
+  `content`     VARCHAR(1000) NOT NULL COMMENT '消息内容（纯文本）',
+  `is_read`     TINYINT      NOT NULL DEFAULT 0 COMMENT '已读：0否 1是',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_member` (`member_id`),
+  KEY `idx_member_read` (`member_id`, `from_type`, `is_read`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服聊天消息表';
+
 -- =====================================================================
 -- 基础数据
 -- =====================================================================
@@ -373,17 +391,21 @@ INSERT INTO `ums_menu` (`id`,`parent_id`,`name`,`path`,`icon`,`perm`,`type`,`sor
 (522,52,'编辑角色','','','ums:role:update',2,98,1),
 (523,52,'分配权限','','','ums:role:assign',2,97,1),
 (524,52,'删除角色','','','ums:role:delete',2,96,1),
-(53,50,'个人中心','/system/profile','','',1,0,1);
+(53,50,'个人中心','/system/profile','','',1,0,1),
+(60,0,'客服聊天','/admin/chat','ChatDotRound','ums:chat:list',1,65,1);
+
+-- 管理端统一路由前缀：前台主站为 /shop，管理端为 /admin/**
+UPDATE `ums_menu` SET `path` = CONCAT('/admin', `path`) WHERE `path` LIKE '/%' AND `path` NOT LIKE '/admin/%';
 
 -- 角色-菜单关联：超级管理员拥有全部权限
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) SELECT 1, id FROM `ums_menu`;
 -- 运营专员
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) VALUES
 (2,1),(2,10),(2,11),(2,111),(2,112),(2,113),(2,114),(2,12),(2,121),(2,122),(2,123),(2,13),(2,131),(2,132),(2,133),
-(2,20),(2,21),(2,211),(2,212),(2,22),(2,221),(2,30),(2,301),(2,40),(2,41),(2,411),(2,412),(2,413),(2,53);
+(2,20),(2,21),(2,211),(2,212),(2,22),(2,221),(2,30),(2,301),(2,40),(2,41),(2,411),(2,412),(2,413),(2,60),(2,53);
 -- 客服专员
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) VALUES
-(3,1),(3,20),(3,21),(3,22),(3,221),(3,30),(3,53);
+(3,1),(3,20),(3,21),(3,22),(3,221),(3,30),(3,53),(3,60);
 
 -- 品牌
 INSERT INTO `pms_brand` (`id`,`name`,`first_letter`,`description`,`sort`,`status`) VALUES

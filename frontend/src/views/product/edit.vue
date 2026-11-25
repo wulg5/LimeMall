@@ -3,7 +3,7 @@
     <div class="page-card">
       <div class="table-toolbar">
         <span class="title">{{ isEdit ? '编辑商品' : '新增商品' }}</span>
-        <el-button @click="$router.push('/product/list')">返回列表</el-button>
+        <el-button @click="$router.push('/admin/product/list')">返回列表</el-button>
       </div>
 
       <el-form ref="formRef" v-loading="loading" :model="form" :rules="rules" label-width="92px">
@@ -94,7 +94,7 @@
         <el-button class="add-sku" :icon="Plus" @click="addSku">添加 SKU</el-button>
 
         <div class="form-footer">
-          <el-button size="large" @click="$router.push('/product/list')">取 消</el-button>
+          <el-button size="large" @click="$router.push('/admin/product/list')">取 消</el-button>
           <el-button type="primary" size="large" :loading="saving" @click="handleSave">保存商品</el-button>
         </div>
       </el-form>
@@ -255,7 +255,7 @@ async function handleSave() {
       await productCreate(payload)
       ElMessage.success('商品创建成功')
     }
-    router.push('/product/list')
+    router.push('/admin/product/list')
   } finally {
     saving.value = false
   }

@@ -1,8 +1,9 @@
 @echo off
 chcp 65001 >nul
 rem =============================================
-rem  青柠商城 - 启动后端（端口 8080）
+rem  青柠商城 - 启动后端（端口 18080）
 rem  前置：MySQL 已启动（小皮面板）
+rem  可用环境变量 SERVER_PORT 覆盖端口
 rem =============================================
 cd /d %~dp0
 
@@ -15,6 +16,6 @@ if not exist "%JAR%" (
   exit /b 1
 )
 
-echo [青柠商城] 启动后端服务（http://127.0.0.1:8080）...
+echo [青柠商城] 启动后端服务（http://127.0.0.1:18080）...
 start "LimeMall-Backend" "%JAVA_HOME%\bin\java" -jar "%JAR%"
-echo 后端已在新窗口启动。接口文档：http://127.0.0.1:8080/swagger-ui.html
+echo 后端已在新窗口启动。接口文档：http://127.0.0.1:18080/swagger-ui.html

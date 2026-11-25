@@ -16,6 +16,7 @@ import com.limemall.mapper.PmsProductMapper;
 import com.limemall.mapper.PmsSkuMapper;
 import com.limemall.vo.ProductDetailVO;
 import com.limemall.vo.ProductVO;
+import com.limemall.util.HtmlSanitizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -264,7 +265,8 @@ public class ProductService {
         product.setAlbum(dto.getAlbum());
         product.setOriginalPrice(dto.getOriginalPrice());
         product.setUnit(StringUtils.hasText(dto.getUnit()) ? dto.getUnit() : "件");
-        product.setDetailHtml(dto.getDetailHtml());
+        // 富文本入库前消毒：移除 script/事件属性/javascript: 协议，防后台注入前台
+        product.setDetailHtml(HtmlSanitizer.sanitize(dto.getDetailHtml()));
         product.setSort(dto.getSort() == null ? 0 : dto.getSort());
         product.setPublishStatus(dto.getPublishStatus());
     }

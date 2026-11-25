@@ -18,7 +18,7 @@
     <!-- 待办提醒 -->
     <el-row :gutter="16">
       <el-col :span="12">
-        <div class="todo-banner" @click="$router.push('/order/list?status=1')">
+        <div class="todo-banner" @click="$router.push('/admin/order/list?status=1')">
           <el-icon class="todo-icon" color="#d97706"><Van /></el-icon>
           <span>待发货订单</span>
           <b class="todo-num">{{ summary.pendingDeliverCount ?? 0 }}</b>
@@ -26,7 +26,7 @@
         </div>
       </el-col>
       <el-col :span="12">
-        <div class="todo-banner" @click="$router.push('/order/return')">
+        <div class="todo-banner" @click="$router.push('/admin/order/return')">
           <el-icon class="todo-icon" color="#dc2626"><RefreshLeft /></el-icon>
           <span>待审核退款</span>
           <b class="todo-num">{{ summary.pendingReturnCount ?? 0 }}</b>
@@ -78,7 +78,7 @@
     <div class="page-card">
       <div class="table-toolbar">
         <span class="title">最新订单</span>
-        <el-button link type="primary" @click="$router.push('/order/list')">查看全部</el-button>
+        <el-button link type="primary" @click="$router.push('/admin/order/list')">查看全部</el-button>
       </div>
       <el-table :data="latestOrders">
         <el-table-column prop="orderSn" label="订单号" min-width="190" />

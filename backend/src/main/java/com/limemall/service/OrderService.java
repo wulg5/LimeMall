@@ -25,6 +25,7 @@ import com.limemall.mapper.SmsCouponMemberMapper;
 import com.limemall.mapper.UmsMemberMapper;
 import com.limemall.vo.OrderDetailVO;
 import com.limemall.vo.OrderVO;
+import com.limemall.util.MemberLevels;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -107,7 +108,7 @@ public class OrderService {
     }
 
     /**
-     * 订单发货：仅「待发货」状态可操作。
+     * 订单发货：仅「待发货」状态可操作（条件更新防止并发状态漂移）。
      */
     @Transactional
     public void deliver(Long id, DeliverDTO dto) {
@@ -115,13 +116,16 @@ public class OrderService {
         if (order.getStatus() != STATUS_UNSHIPPED) {
             throw new BusinessException("当前订单状态不允许发货（仅待发货订单可发货）");
         }
-        OmsOrder update = new OmsOrder();
-        update.setId(id);
-        update.setStatus(STATUS_SHIPPED);
-        update.setLogisticsCompany(dto.getLogisticsCompany());
-        update.setLogisticsSn(dto.getLogisticsSn());
-        update.setDeliveryTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getStatus, STATUS_SHIPPED)
+                .set(OmsOrder::getLogisticsCompany, dto.getLogisticsCompany())
+                .set(OmsOrder::getLogisticsSn, dto.getLogisticsSn())
+                .set(OmsOrder::getDeliveryTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, id)
+                .eq(OmsOrder::getStatus, STATUS_UNSHIPPED));
+        if (affected == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
     }
 
     /**
@@ -134,11 +138,49 @@ public class OrderService {
             throw new BusinessException("当前订单状态不允许关闭（仅待付款/待发货订单可关闭）");
         }
         restoreStockAndCoupon(order);
-        OmsOrder update = new OmsOrder();
-        update.setId(id);
-        update.setStatus(STATUS_CLOSED);
-        update.setCloseTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getStatus, STATUS_CLOSED)
+                .set(OmsOrder::getCloseTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, id)
+                .in(OmsOrder::getStatus, STATUS_UNPAID, STATUS_UNSHIPPED));
+        if (affected == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
+    }
+
+    /**
+     * 查询超时未支付订单ID（供定时任务批量关单）。
+     */
+    public List<Long> listExpiredOrderIds(int timeoutMinutes) {
+        return orderMapper.selectList(new LambdaQueryWrapper<OmsOrder>()
+                        .select(OmsOrder::getId)
+                        .eq(OmsOrder::getStatus, STATUS_UNPAID)
+                        .le(OmsOrder::getCreateTime, LocalDateTime.now().minusMinutes(timeoutMinutes))
+                        .last("LIMIT 100"))
+                .stream().map(OmsOrder::getId).toList();
+    }
+
+    /**
+     * 支付超时关单：回补库存/销量/优惠券并关闭订单（定时任务单笔调用，事务隔离）。
+     *
+     * @return 是否实际关闭
+     */
+    @Transactional
+    public boolean closeExpiredOrder(Long orderId, int timeoutMinutes) {
+        OmsOrder order = orderMapper.selectById(orderId);
+        if (order == null || order.getStatus() != STATUS_UNPAID) {
+            return false;
+        }
+        if (order.getCreateTime().isAfter(LocalDateTime.now().minusMinutes(timeoutMinutes))) {
+            return false;
+        }
+        restoreStockAndCoupon(order);
+        int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getStatus, STATUS_CLOSED)
+                .set(OmsOrder::getCloseTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, orderId)
+                .eq(OmsOrder::getStatus, STATUS_UNPAID));
+        return affected == 1;
     }
 
     // ==================================================================
@@ -271,7 +313,8 @@ public class OrderService {
     }
 
     /**
-     * 模拟支付：待付款 → 待发货，累计商品销量。
+     * 模拟支付：待付款 → 待发货，累计商品销量，并按消费金额累计会员积分、
+     * 达阈值自动升级（1 元 = 1 积分 × 等级倍率）。
      */
     @Transactional
     public void pay(Long memberId, Long id) {
@@ -279,11 +322,15 @@ public class OrderService {
         if (order.getStatus() != STATUS_UNPAID) {
             throw new BusinessException("当前订单状态不可支付");
         }
-        OmsOrder update = new OmsOrder();
-        update.setId(id);
-        update.setStatus(STATUS_UNSHIPPED);
-        update.setPayTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        // 条件更新：仅当仍为待付款时生效，防止并发重复支付
+        int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getStatus, STATUS_UNSHIPPED)
+                .set(OmsOrder::getPayTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, id)
+                .eq(OmsOrder::getStatus, STATUS_UNPAID));
+        if (affected == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
         // 支付成功累计销量
         for (OmsOrderItem item : listItems(id)) {
             skuMapper.update(null, new LambdaUpdateWrapper<PmsSku>()
@@ -293,10 +340,22 @@ public class OrderService {
                     .setSql("sales = sales + " + item.getQuantity())
                     .eq(PmsProduct::getId, item.getProductId()));
         }
+        // 会员成长：累计积分并按阈值自动升降级
+        UmsMember member = memberMapper.selectById(memberId);
+        if (member != null) {
+            int earned = order.getPayAmount().intValue()
+                    * MemberLevels.pointMultiplier(member.getLevel());
+            int totalPoints = member.getPoints() + earned;
+            UmsMember memberUpdate = new UmsMember();
+            memberUpdate.setId(memberId);
+            memberUpdate.setPoints(totalPoints);
+            memberUpdate.setLevel(MemberLevels.resolveLevel(totalPoints));
+            memberMapper.updateById(memberUpdate);
+        }
     }
 
     /**
-     * 会员取消订单（仅待付款），回补库存与优惠券。
+     * 会员取消订单（仅待付款），回补库存与优惠券（条件更新防并发）。
      */
     @Transactional
     public void cancel(Long memberId, Long id) {
@@ -305,15 +364,18 @@ public class OrderService {
             throw new BusinessException("仅待付款订单可以取消，已支付订单请申请退款");
         }
         restoreStockAndCoupon(order);
-        OmsOrder update = new OmsOrder();
-        update.setId(id);
-        update.setStatus(STATUS_CLOSED);
-        update.setCloseTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getStatus, STATUS_CLOSED)
+                .set(OmsOrder::getCloseTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, id)
+                .eq(OmsOrder::getStatus, STATUS_UNPAID));
+        if (affected == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
     }
 
     /**
-     * 确认收货：已发货 → 已完成。
+     * 确认收货：已发货 → 已完成（条件更新防并发）。
      */
     @Transactional
     public void receive(Long memberId, Long id) {
@@ -321,11 +383,14 @@ public class OrderService {
         if (order.getStatus() != STATUS_SHIPPED) {
             throw new BusinessException("当前订单状态不可确认收货");
         }
-        OmsOrder update = new OmsOrder();
-        update.setId(id);
-        update.setStatus(STATUS_COMPLETED);
-        update.setReceiveTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getStatus, STATUS_COMPLETED)
+                .set(OmsOrder::getReceiveTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, id)
+                .eq(OmsOrder::getStatus, STATUS_SHIPPED));
+        if (affected == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
     }
 
     /**

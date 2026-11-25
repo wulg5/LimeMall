@@ -34,7 +34,7 @@
       <div class="table-toolbar">
         <span class="title">商品列表</span>
         <el-button v-if="userStore.hasPerm('pms:product:create')" type="primary" :icon="Plus"
-                   @click="$router.push('/product/edit')">新增商品</el-button>
+                   @click="$router.push('/admin/product/edit')">新增商品</el-button>
       </div>
 
       <el-table v-loading="loading" :data="list">
@@ -69,7 +69,7 @@
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button v-if="userStore.hasPerm('pms:product:update')" link type="primary"
-                       @click="$router.push(`/product/edit?id=${row.id}`)">编辑</el-button>
+                       @click="$router.push(`/admin/product/edit?id=${row.id}`)">编辑</el-button>
             <el-button v-if="userStore.hasPerm('pms:product:delete')" link type="danger"
                        @click="handleDelete(row)">删除</el-button>
           </template>
