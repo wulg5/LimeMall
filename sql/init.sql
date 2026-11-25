@@ -469,6 +469,20 @@ CREATE TABLE `sys_admin_log` (
   KEY `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台操作审计日志';
 
+-- ---------------------------------------------------------------------
+-- 23. sys_config 系统参数配置（后台可视化维护，如支付宝支付参数；DB 优先于环境变量）
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_config`;
+CREATE TABLE `sys_config` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `cfg_key`     VARCHAR(100) NOT NULL COMMENT '配置键',
+  `cfg_value`   VARCHAR(2000) DEFAULT NULL COMMENT '配置值',
+  `remark`      VARCHAR(255) DEFAULT NULL COMMENT '说明',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_key` (`cfg_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统参数配置（后台可视化维护）';
+
 -- =====================================================================
 -- 基础数据
 -- =====================================================================
@@ -533,6 +547,8 @@ INSERT INTO `ums_menu` (`id`,`parent_id`,`name`,`path`,`icon`,`perm`,`type`,`sor
 (523,52,'分配权限','','','ums:role:assign',2,97,1),
 (524,52,'删除角色','','','ums:role:delete',2,96,1),
 (53,50,'个人中心','/system/profile','','',1,0,1),
+(55,50,'支付配置','/system/pay-config','Wallet','sys:config:list',1,97,1),
+(551,55,'保存配置','','','sys:config:edit',2,99,1),
 (60,0,'客服聊天','/admin/chat','ChatDotRound','ums:chat:list',1,65,1),
 (601,60,'回复消息','','','ums:chat:reply',2,99,1),
 (42,40,'内容管理','/marketing/content','Picture','cms:content:list',1,98,1),

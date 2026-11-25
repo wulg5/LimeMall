@@ -234,7 +234,9 @@ mysqldump -uroot -p --default-character-set=utf8mb4 lime_mall > /opt/limemall/ba
 
 ## 七、可选：接入支付宝沙箱真实支付
 
-后端已内置沙箱支付（手工 RSA2 签名，无需额外依赖），配置环境变量即启用：
+**推荐方式：部署完成后登录管理端 → 系统管理 → 支付配置**，在页面上粘贴 APPID / 应用私钥 / 支付宝公钥并打开启用开关，保存立即生效（配置存于 `sys_config` 表，密钥仅脱敏展示）。
+
+以下环境变量方式作为**自动化部署兜底**（后台配置优先于环境变量）：
 
 ```bash
 # /etc/systemd/system/limemall-backend.service 的 [Service] 段追加：

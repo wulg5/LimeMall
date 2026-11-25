@@ -66,6 +66,7 @@ const routes = [
       { path: 'system/admin', component: () => import('@/views/system/admin.vue'), meta: { title: '管理员管理' } },
       { path: 'system/role', component: () => import('@/views/system/role.vue'), meta: { title: '角色管理' } },
       { path: 'system/log', component: () => import('@/views/system/log.vue'), meta: { title: '操作日志' } },
+      { path: 'system/pay-config', component: () => import('@/views/system/payConfig.vue'), meta: { title: '支付配置' } },
       { path: 'system/profile', component: () => import('@/views/system/profile.vue'), meta: { title: '个人中心' } }
     ]
   },
