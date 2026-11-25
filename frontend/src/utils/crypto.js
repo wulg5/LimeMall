@@ -57,6 +57,16 @@ async function encryptPassword(plain) {
   return jsRsaEncrypt(plain, base64Key)
 }
 
+/** 通用强制加密：失败提示并终止（供注册/改密/建管理员等表单复用） */
+export async function encryptRequired(plain) {
+  const cipher = await encryptPassword(plain)
+  if (!cipher) {
+    ElMessage.error('登录加密组件初始化失败，请刷新页面重试')
+    throw new Error('ENCRYPT_FAILED')
+  }
+  return cipher
+}
+
 /**
  * 构建登录请求载荷：任何情况下都发送密文（encrypted=true）。
  * 加密组件异常时终止提交并提示，绝不回退明文。验证码字段（失败 2 次后）原样透传。
@@ -67,12 +77,7 @@ export async function buildLoginPayload(form) {
     payload.captchaId = form.captchaId
     payload.captchaCode = form.captchaCode
   }
-  const cipher = await encryptPassword(form.password)
-  if (!cipher) {
-    ElMessage.error('登录加密组件初始化失败，请刷新页面重试')
-    throw new Error('ENCRYPT_FAILED')
-  }
-  payload.password = cipher
+  payload.password = await encryptRequired(form.password)
   payload.encrypted = true
   return payload
 }

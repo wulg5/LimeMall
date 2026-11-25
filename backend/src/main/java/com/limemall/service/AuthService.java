@@ -61,10 +61,8 @@ public class AuthService {
         }
         UmsAdmin admin = adminMapper.selectOne(new LambdaQueryWrapper<UmsAdmin>()
                 .eq(UmsAdmin::getUsername, dto.getUsername()));
-        // 前端按 RSA-OAEP 加密传输的密码在此解密（兼容未加密的直连调用）
-        String rawPassword = Boolean.TRUE.equals(dto.getEncrypted())
-                ? cryptoService.decrypt(dto.getPassword())
-                : dto.getPassword();
+        // 强制加密通道：拒绝明文密码（encrypted != true 直接报错）
+        String rawPassword = cryptoService.requireDecrypted(dto.getPassword(), dto.getEncrypted());
         if (admin == null || !passwordEncoder.matches(rawPassword, admin.getPassword())) {
             loginAttemptService.recordFailure(attemptKey);
             throw new BusinessException("账号或密码错误");
@@ -111,12 +109,18 @@ public class AuthService {
         if (admin == null) {
             throw new BusinessException("账号不存在");
         }
-        if (!passwordEncoder.matches(dto.getOldPassword(), admin.getPassword())) {
+        // 强制加密通道：新旧密码均为密文；明文长度在解密后校验
+        String oldRaw = cryptoService.requireDecrypted(dto.getOldPassword(), dto.getEncrypted());
+        String newRaw = cryptoService.requireDecrypted(dto.getNewPassword(), dto.getEncrypted());
+        if (newRaw.length() < 6 || newRaw.length() > 32) {
+            throw new BusinessException("新密码长度为 6-32 位");
+        }
+        if (!passwordEncoder.matches(oldRaw, admin.getPassword())) {
             throw new BusinessException("原密码不正确");
         }
         UmsAdmin update = new UmsAdmin();
         update.setId(adminId);
-        update.setPassword(passwordEncoder.encode(dto.getNewPassword()));
+        update.setPassword(passwordEncoder.encode(newRaw));
         adminMapper.updateById(update);
     }
 

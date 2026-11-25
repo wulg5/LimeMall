@@ -40,6 +40,7 @@ public class AdminService {
     private final UmsAdminRoleMapper adminRoleMapper;
     private final UmsRoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
+    private final com.limemall.security.CryptoService cryptoService;
 
     /**
      * 分页查询管理员（支持账号/昵称模糊搜索），并填充角色信息。
@@ -101,8 +102,15 @@ public class AdminService {
         }
         UmsAdmin admin = new UmsAdmin();
         admin.setUsername(dto.getUsername());
-        admin.setPassword(passwordEncoder.encode(
-                StringUtils.hasText(dto.getPassword()) ? dto.getPassword() : DEFAULT_PASSWORD));
+        // 密码可选：提供时必须是 RSA 密文（解密后校验长度）；未提供用默认密码
+        String rawPassword = DEFAULT_PASSWORD;
+        if (StringUtils.hasText(dto.getPassword())) {
+            rawPassword = cryptoService.requireDecrypted(dto.getPassword(), dto.getEncrypted());
+            if (rawPassword.length() < 6 || rawPassword.length() > 32) {
+                throw new BusinessException("密码长度为 6-32 位");
+            }
+        }
+        admin.setPassword(passwordEncoder.encode(rawPassword));
         admin.setNickname(dto.getNickname());
         admin.setAvatar(dto.getAvatar());
         admin.setEmail(dto.getEmail());

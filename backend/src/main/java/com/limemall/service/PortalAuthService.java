@@ -51,7 +51,12 @@ public class PortalAuthService {
         UmsMember member = new UmsMember();
         member.setUserNo(generateUserNo());
         member.setUsername(dto.getUsername());
-        member.setPassword(passwordEncoder.encode(dto.getPassword()));
+        // 强制加密通道：注册密码必须为 RSA 密文；明文长度在解密后校验
+        String rawPassword = cryptoService.requireDecrypted(dto.getPassword(), dto.getEncrypted());
+        if (rawPassword.length() < 6 || rawPassword.length() > 32) {
+            throw new BusinessException("密码长度为 6-32 位");
+        }
+        member.setPassword(passwordEncoder.encode(rawPassword));
         member.setNickname(StringUtils.hasText(dto.getNickname()) ? dto.getNickname() : dto.getUsername());
         member.setPhone(dto.getPhone());
         member.setAvatar("/img/avatar.svg");
@@ -95,10 +100,8 @@ public class PortalAuthService {
         }
         UmsMember member = memberMapper.selectOne(new LambdaQueryWrapper<UmsMember>()
                 .eq(UmsMember::getUsername, dto.getUsername()));
-        // 前端按 RSA-OAEP 加密传输的密码在此解密（兼容未加密的直连调用）
-        String rawPassword = Boolean.TRUE.equals(dto.getEncrypted())
-                ? cryptoService.decrypt(dto.getPassword())
-                : dto.getPassword();
+        // 强制加密通道：拒绝明文密码（encrypted != true 直接报错）
+        String rawPassword = cryptoService.requireDecrypted(dto.getPassword(), dto.getEncrypted());
         if (member == null || !passwordEncoder.matches(rawPassword, member.getPassword())) {
             loginAttemptService.recordFailure(attemptKey);
             throw new BusinessException("账号或密码错误");

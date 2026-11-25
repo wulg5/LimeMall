@@ -43,6 +43,16 @@ public class CryptoService {
     }
 
     /**
+     * 强制加密场景（登录/注册/改密/创建管理员）：非加密请求一律拒绝，杜绝明文通道。
+     */
+    public String requireDecrypted(String password, Boolean encrypted) {
+        if (!Boolean.TRUE.equals(encrypted)) {
+            throw new BusinessException("安全要求：密码必须加密传输，明文请求已被拒绝");
+        }
+        return decrypt(password);
+    }
+
+    /**
      * 解密前端加密后的密码（Base64 密文）。
      * 支持两种填充：WebCrypto 的 RSA-OAEP-SHA256（首选）与纯 JS 库的 PKCS#1 v1.5
      * （浏览器非安全上下文 —— 如局域网 HTTP——无法使用 WebCrypto 时的回退）。

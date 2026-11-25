@@ -52,6 +52,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { updatePassword } from '@/api/auth'
+import { encryptRequired } from '@/utils/crypto'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -89,7 +90,12 @@ async function handleSave() {
   await formRef.value.validate()
   saving.value = true
   try {
-    await updatePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword })
+    // 新旧密码均加密传输（服务端强制校验 encrypted=true）
+    const [oldCipher, newCipher] = await Promise.all([
+      encryptRequired(form.oldPassword),
+      encryptRequired(form.newPassword)
+    ])
+    await updatePassword({ oldPassword: oldCipher, newPassword: newCipher, encrypted: true })
     ElMessage.success('密码修改成功，请重新登录')
     userStore.logout()
     router.push('/admin/login')

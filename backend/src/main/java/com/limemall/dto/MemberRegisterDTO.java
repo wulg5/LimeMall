@@ -16,8 +16,10 @@ public class MemberRegisterDTO {
     private String username;
 
     @NotBlank(message = "请输入密码")
-    @Size(min = 6, max = 32, message = "密码长度为 6-32 位")
     private String password;
+
+    /** 密码是否为前端 RSA 加密后的密文（服务端强制要求 true；明文长度校验在解密后进行） */
+    private Boolean encrypted;
 
     @Size(max = 64, message = "昵称不能超过 64 字")
     private String nickname;

@@ -23,9 +23,11 @@ public class AdminSaveDTO {
     @Pattern(regexp = "^[a-zA-Z0-9_]{3,20}$", message = "账号为 3-20 位字母、数字或下划线")
     private String username;
 
-    /** 新增时可选（默认 admin123），编辑时忽略 */
-    @Size(min = 6, max = 32, message = "密码长度为 6-32 位")
+    /** 新增时可选（默认 admin123，需 RSA 加密传输），编辑时忽略 */
     private String password;
+
+    /** 密码是否为前端 RSA 加密后的密文（提供密码时强制要求 true） */
+    private Boolean encrypted;
 
     @NotBlank(message = "请输入昵称")
     private String nickname;

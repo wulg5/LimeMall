@@ -68,6 +68,7 @@ import { ElMessage } from 'element-plus'
 import { Iphone, Lock, User, UserFilled } from '@element-plus/icons-vue'
 import { portalRegister } from '@/api/portal'
 import { getCaptcha } from '@/api/auth'
+import { encryptRequired } from '@/utils/crypto'
 import { useShopStore } from '@/stores/shop'
 
 const route = useRoute()
@@ -142,9 +143,11 @@ async function handleRegister() {
   await registerFormRef.value.validate()
   loading.value = true
   try {
+    const cipher = await encryptRequired(registerForm.password)
     await portalRegister({
       username: registerForm.username,
-      password: registerForm.password,
+      password: cipher,
+      encrypted: true,
       nickname: registerForm.nickname || undefined,
       phone: registerForm.phone || undefined
     })

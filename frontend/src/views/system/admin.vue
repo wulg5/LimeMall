@@ -103,6 +103,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { adminPage, adminCreate, adminUpdate, adminResetPassword, adminDelete, roleList } from '@/api/system'
+import { encryptRequired } from '@/utils/crypto'
 
 const userStore = useUserStore()
 
@@ -179,9 +180,19 @@ async function handleSave() {
   saving.value = true
   try {
     if (form.id) {
-      await adminUpdate({ ...form })
+      const payload = { ...form }
+      delete payload.password
+      await adminUpdate(payload)
     } else {
-      await adminCreate({ ...form })
+      const payload = { ...form }
+      if (payload.password) {
+        // 新建密码强制加密传输（留空则由服务端使用默认密码）
+        payload.password = await encryptRequired(payload.password)
+        payload.encrypted = true
+      } else {
+        delete payload.password
+      }
+      await adminCreate(payload)
     }
     ElMessage.success('保存成功')
     dialogVisible.value = false
