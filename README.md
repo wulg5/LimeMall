@@ -127,18 +127,24 @@ mall-course-design/
 > 环境变量 `ALIPAY_APP_ID / ALIPAY_PRIVATE_KEY / ALIPAY_PUBLIC_KEY / ALIPAY_NOTIFY_URL / ALIPAY_RETURN_URL`
 > 作为自动化部署的兜底（两项都没有时前台支付回退模拟支付）。
 
-### 无公网环境（本地开发）怎么用
+### 本地开发：cloudflared 内网穿透（推荐）
 
-异步通知需要公网地址，本地没有也能真实走沙箱，系统内置两条**无公网入账通道**：
+异步通知需要公网 HTTPS 地址，用 Cloudflare 免费隧道即可（无需自有域名/备案）：
 
-1. **同步回跳验签（自动）**：付款完成后支付宝把浏览器 302 跳回 `return_url`，回跳参数携带支付宝私钥签名；
-   前端订单页检测到回跳参数后调用后端验签接口，**验签 + 金额校验通过即入账**。
-   配置要点：`return_url` 填 `http://localhost:5173/shop/orders`（本机浏览器回跳，无需公网）。
-2. **主动查单（手动兜底）**：付款后若没等到回跳（如关闭页面），在订单页点「刷新支付状态」，
-   后端调用 `alipay.trade.query`（服务器出站请求，同样无需公网），响应报文验签通过后入账。
+```bash
+# 1) 安装 cloudflared 后，把本机后端映射为公网 HTTPS 地址（临时隧道，URL 每次启动变化）
+cloudflared tunnel --url http://127.0.0.1:18080
+# 输出形如：https://xxxx-yyyy.trycloudflare.com
 
-`通知地址`（notify_url）无公网时可留空；将来部署到公网服务器后填上即可自动获得异步通知双保险。
-另提供 `tools/mock-alipay-gateway.js` 本地模拟网关，可在没有沙箱账号时演示「主动查单」的验签入账链路。
+# 2) 后台「支付配置」填写：
+#    异步通知地址：https://xxxx-yyyy.trycloudflare.com/portal/pay/alipay/notify   ← 隧道直连后端，路径无 /api 前缀
+#    同步跳转地址：http://localhost:5173/shop/orders                              ← 浏览器回跳本机即可
+```
+
+3. 沙箱付款后，支付宝服务器**实时回调**该 HTTPS 地址（验签 + 金额校验 + 幂等入账），订单立即变为待发货。
+
+> 注意：trycloudflare 临时域名每次重启隧道都会变化，需同步更新后台的异步通知地址；
+> 有自有域名时可创建 Named Tunnel 固定域名（`cloudflared tunnel create` + DNS 路由）。
 
 ## 设计要点
 

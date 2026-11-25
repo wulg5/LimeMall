@@ -44,8 +44,8 @@
         </el-form-item>
 
         <el-form-item label="异步通知地址">
-          <el-input v-model="form.notifyUrl" placeholder="https://你的域名/api/portal/pay/alipay/notify（无公网可留空）" />
-          <span class="form-tip">有公网时填写以获得异步通知；无公网可留空——支付回跳验签/「刷新支付状态」查单照常入账</span>
+          <el-input v-model="form.notifyUrl" placeholder="https://xxxx.trycloudflare.com/portal/pay/alipay/notify" />
+          <span class="form-tip">必须公网可访问；本地开发用 cloudflared 穿透本机 18080，路径为 /portal/pay/alipay/notify（详见 README）</span>
         </el-form-item>
 
         <el-form-item label="同步跳转地址">
@@ -63,7 +63,7 @@
         <ol class="tips-list">
           <li>开放平台控制台 → 沙箱应用 → 获取 APPID；接口加签方式选择「自定义密钥（RSA2）」，按工具生成密钥对。</li>
           <li>上传「应用公钥」到开放平台，将返回的「支付宝公钥」与应用私钥分别贴到上方保存。</li>
-          <li>异步通知地址需公网可访问（本系统已有验签 + 金额校验 + 幂等入账，失败回调一律拒绝）。</li>
+          <li>异步通知地址需公网可访问：本地开发运行 <code>cloudflared tunnel --url http://127.0.0.1:18080</code> 获取 HTTPS 地址填入（路径 /portal/pay/alipay/notify，详见 README）；回调经验签 + 金额校验 + 幂等入账，失败一律拒绝。</li>
           <li>保存后立即生效，无需重启；服务启动时可用环境变量兜底（后台配置优先）。</li>
         </ol>
       </el-alert>

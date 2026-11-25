@@ -38,7 +38,6 @@
             <el-button size="small" @click="openDetail(order)">订单详情</el-button>
             <template v-if="order.status === 0">
               <el-button size="small" type="primary" @click="handlePay(order)">去支付</el-button>
-              <el-button size="small" @click="handleSyncPay(order)">刷新支付状态</el-button>
               <el-button size="small" @click="handleCancel(order)">取消订单</el-button>
             </template>
             <template v-if="order.status === 1 || order.status === 2">
@@ -85,17 +84,12 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  cancelOrder, getMyOrderDetail, getMyOrders, payOrder, receiveOrder, refundOrder,
-  submitComments, syncPayNotify, syncPayOrder
+  cancelOrder, getMyOrderDetail, getMyOrders, payOrder, receiveOrder, refundOrder, submitComments
 } from '@/api/portal'
 import { money, ORDER_STATUS } from '@/utils/format'
-
-const route = useRoute()
-const router = useRouter()
 
 /** 与后端 limemall.order.pay-timeout-minutes 保持一致（默认 30 分钟） */
 const PAY_TIMEOUT_MINUTES = 30
@@ -110,20 +104,7 @@ const nowTs = ref(Date.now())
 let tickTimer = null
 let expireRefreshScheduled = false
 
-onMounted(async () => {
-  // 支付宝同步回跳：付款完成 302 回本地页面带签名参数，验签入账（无公网方案核心通道）
-  const query = route.query
-  if (query.out_trade_no && query.sign) {
-    const params = {}
-    Object.keys(query).forEach((key) => { params[key] = String(query[key]) })
-    try {
-      await syncPayNotify(params)
-      ElMessage.success('支付成功，订单状态已更新')
-    } catch (e) {
-      /* 验签失败等由拦截器提示 */
-    }
-    router.replace({ path: '/shop/orders' })
-  }
+onMounted(() => {
   load()
   tickTimer = setInterval(tick, 1000)
 })
@@ -197,17 +178,6 @@ async function handlePay(order) {
     load()
   } catch (e) {
     /* 取消 */
-  }
-}
-
-/** 主动查单：无公网回调时，付款后点击刷新即可确认入账 */
-async function handleSyncPay(order) {
-  const paid = await syncPayOrder(order.id)
-  if (paid) {
-    ElMessage.success('支付已确认，订单状态已更新')
-    load()
-  } else {
-    ElMessage.warning('暂未查询到支付成功，请先完成支付宝付款后再刷新')
   }
 }
 
