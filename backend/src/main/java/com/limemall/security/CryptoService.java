@@ -42,18 +42,34 @@ public class CryptoService {
         return Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
     }
 
-    /** 解密前端加密后的密码（Base64 密文） */
+    /**
+     * 解密前端加密后的密码（Base64 密文）。
+     * 支持两种填充：WebCrypto 的 RSA-OAEP-SHA256（首选）与纯 JS 库的 PKCS#1 v1.5
+     * （浏览器非安全上下文 —— 如局域网 HTTP——无法使用 WebCrypto 时的回退）。
+     */
     public String decrypt(String base64Cipher) {
+        byte[] cipherBytes;
+        try {
+            cipherBytes = Base64.getDecoder().decode(base64Cipher);
+        } catch (Exception e) {
+            throw new BusinessException("登录加密参数无效，请刷新页面后重试");
+        }
         try {
             Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
             OAEPParameterSpec spec = new OAEPParameterSpec(
                     "SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT);
             cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(), spec);
-            byte[] plain = cipher.doFinal(Base64.getDecoder().decode(base64Cipher));
-            return new String(plain, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            // 不区分具体原因，避免侧信道信息；要求前端刷新获取最新公钥后重试
-            throw new BusinessException("登录加密参数无效，请刷新页面后重试");
+            return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
+        } catch (Exception oaepFailure) {
+            // 回退：PKCS#1 v1.5（纯 JS RSA 库填充方式）
+            try {
+                Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+                cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate());
+                return new String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8);
+            } catch (Exception pkcs1Failure) {
+                // 不区分具体原因，避免侧信道信息；要求前端刷新获取最新公钥后重试
+                throw new BusinessException("登录加密参数无效，请刷新页面后重试");
+            }
         }
     }
 }
