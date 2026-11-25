@@ -19,3 +19,8 @@ export function logout() {
 export function updatePassword(data) {
   return request.put('/admin/auth/password', data)
 }
+
+/** 图形验证码（登录失败 2 次后需要） */
+export function getCaptcha() {
+  return request.get('/auth/captcha')
+}

@@ -15,6 +15,12 @@
         <el-form-item prop="password">
           <el-input v-model="loginForm.password" type="password" show-password placeholder="密码" :prefix-icon="Lock" />
         </el-form-item>
+        <el-form-item v-if="needCaptcha">
+          <div class="captcha-row">
+            <el-input v-model="loginForm.captchaCode" placeholder="图形验证码" maxlength="4" />
+            <img :src="captchaImage" class="captcha-img" alt="验证码" title="看不清？点击刷新" @click="loadCaptcha" />
+          </div>
+        </el-form-item>
         <el-button type="primary" size="large" class="submit-btn" :loading="loading" @click="handleLogin">
           登 录
         </el-button>
@@ -61,6 +67,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Iphone, Lock, User, UserFilled } from '@element-plus/icons-vue'
 import { portalRegister } from '@/api/portal'
+import { getCaptcha } from '@/api/auth'
 import { useShopStore } from '@/stores/shop'
 
 const route = useRoute()
@@ -69,9 +76,11 @@ const shopStore = useShopStore()
 
 const isRegister = ref(route.query.mode === 'register')
 const loading = ref(false)
+const needCaptcha = ref(false)
+const captchaImage = ref('')
 
 const loginFormRef = ref()
-const loginForm = reactive({ username: '', password: '' })
+const loginForm = reactive({ username: '', password: '', captchaId: '', captchaCode: '' })
 const loginRules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
@@ -103,6 +112,13 @@ const registerRules = {
   ]
 }
 
+async function loadCaptcha() {
+  const data = await getCaptcha()
+  loginForm.captchaId = data.captchaId
+  loginForm.captchaCode = ''
+  captchaImage.value = data.image
+}
+
 async function handleLogin() {
   await loginFormRef.value.validate()
   loading.value = true
@@ -111,6 +127,12 @@ async function handleLogin() {
     await shopStore.fetchMe()
     ElMessage.success('登录成功')
     router.push(route.query.redirect || '/shop')
+  } catch (e) {
+    // 连续失败 2 次后服务端要求验证码：展示并刷新验证码
+    if ((e?.message || '').includes('验证码')) {
+      needCaptcha.value = true
+      await loadCaptcha()
+    }
   } finally {
     loading.value = false
   }
@@ -173,6 +195,20 @@ async function handleRegister() {
   font-size: 13px;
   color: #9ca3af;
   margin: 0;
+}
+
+.captcha-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.captcha-img {
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .submit-btn {

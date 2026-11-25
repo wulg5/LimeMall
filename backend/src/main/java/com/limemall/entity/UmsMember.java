@@ -19,6 +19,9 @@ public class UmsMember {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    /** 会员业务编号（对外展示用，随机不可遍历） */
+    private String userNo;
+
     /** 会员账号 */
     private String username;
 

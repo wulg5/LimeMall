@@ -13,6 +13,9 @@ public class MemberVO {
 
     private Long id;
 
+    /** 会员业务编号（对外展示用，不可遍历） */
+    private String userNo;
+
     private String username;
 
     private String nickname;

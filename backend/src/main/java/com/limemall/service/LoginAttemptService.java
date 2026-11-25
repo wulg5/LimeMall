@@ -40,6 +40,21 @@ public class LoginAttemptService {
         }
     }
 
+    /** 当前窗口内失败次数（用于验证码门槛判断） */
+    public int failureCount(String key) {
+        Deque<Long> records = attempts.get(key);
+        if (records == null) {
+            return 0;
+        }
+        synchronized (records) {
+            long threshold = System.currentTimeMillis() - WINDOW_MILLIS;
+            while (!records.isEmpty() && records.peekFirst() < threshold) {
+                records.pollFirst();
+            }
+            return records.size();
+        }
+    }
+
     /** 记录一次失败尝试 */
     public void recordFailure(String key) {
         Deque<Long> records = attempts.computeIfAbsent(key, k -> new ArrayDeque<>());

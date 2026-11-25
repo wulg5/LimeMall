@@ -44,11 +44,20 @@ async function encryptPassword(plain) {
 /**
  * 构建登录请求载荷：加密成功则携带 { password: 密文, encrypted: true }，
  * 否则回退 { password: 明文 }（服务端兼容，仅限 HTTPS 兜底场景）。
+ * 验证码字段（失败 2 次后）原样透传。
  */
 export async function buildLoginPayload(form) {
+  const payload = { username: form.username }
+  if (form.captchaId && form.captchaCode) {
+    payload.captchaId = form.captchaId
+    payload.captchaCode = form.captchaCode
+  }
   const cipher = await encryptPassword(form.password)
   if (cipher) {
-    return { username: form.username, password: cipher, encrypted: true }
+    payload.password = cipher
+    payload.encrypted = true
+  } else {
+    payload.password = form.password
   }
-  return { username: form.username, password: form.password }
+  return payload
 }

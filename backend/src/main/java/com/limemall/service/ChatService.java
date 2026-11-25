@@ -132,6 +132,8 @@ public class ChatService {
                 vo.setMemberNickname(member.getNickname());
                 vo.setMemberUsername(member.getUsername());
                 vo.setMemberAvatar(member.getAvatar());
+                vo.setMemberLevel(member.getLevel());
+                vo.setMemberUserNo(member.getUserNo());
             }
             vo.setAgentId(session.getAgentId());
             UmsAdmin agent = session.getAgentId() == null ? null : agentMap.get(session.getAgentId());
@@ -287,6 +289,8 @@ public class ChatService {
             vo.setMemberNickname(member.getNickname());
             vo.setMemberUsername(member.getUsername());
             vo.setMemberAvatar(member.getAvatar());
+                vo.setMemberLevel(member.getLevel());
+                vo.setMemberUserNo(member.getUserNo());
         }
         vo.setAgentId(session.getAgentId());
         if (session.getAgentId() != null) {

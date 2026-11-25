@@ -27,6 +27,9 @@ public class SmsFlashSale {
     /** 秒杀价 */
     private BigDecimal flashPrice;
 
+    /** 每人限购数量 */
+    private Integer perUserLimit;
+
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;

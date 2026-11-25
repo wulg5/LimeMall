@@ -92,6 +92,7 @@ CREATE TABLE `ums_role_menu` (
 DROP TABLE IF EXISTS `ums_member`;
 CREATE TABLE `ums_member` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_no`       VARCHAR(20)  DEFAULT NULL COMMENT '会员业务编号（对外展示，随机不可遍历）',
   `username`      VARCHAR(64)  NOT NULL COMMENT '会员账号',
   `password`      VARCHAR(100) NOT NULL COMMENT '密码（BCrypt 加密）',
   `nickname`      VARCHAR(64)  DEFAULT NULL COMMENT '昵称',
@@ -107,6 +108,7 @@ CREATE TABLE `ums_member` (
   `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_no` (`user_no`),
   UNIQUE KEY `uk_username` (`username`),
   UNIQUE KEY `uk_phone` (`phone`),
   KEY `idx_register_time` (`register_time`)
@@ -437,6 +439,7 @@ CREATE TABLE `sms_flash_sale` (
   `name`        VARCHAR(100) NOT NULL COMMENT '活动名称',
   `sku_id`      BIGINT UNSIGNED NOT NULL COMMENT '参与秒杀的SKU（唯一）',
   `flash_price` DECIMAL(10,2) NOT NULL COMMENT '秒杀价',
+  `per_user_limit` INT        NOT NULL DEFAULT 1 COMMENT '每人限购数量',
   `start_time`  DATETIME     NOT NULL COMMENT '开始时间',
   `end_time`    DATETIME     NOT NULL COMMENT '结束时间',
   `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1启用 0停用',
@@ -741,6 +744,10 @@ INSERT INTO `ums_member` (`id`,`username`,`password`,`nickname`,`phone`,`gender`
 
 -- 成长值按等级基线初始化（成长值只增不减，决定等级）
 UPDATE `ums_member` SET `growth` = CASE `level` WHEN 4 THEN 15000 WHEN 3 THEN 5000 WHEN 2 THEN 1000 ELSE 0 END;
+
+-- 生成会员业务编号（对外展示，随机 10 位不可遍历）
+UPDATE `ums_member` SET `user_no` = CONCAT('U', UPPER(SUBSTRING(MD5(CONCAT(`id`, RAND(), NOW())), 1, 10)))
+WHERE `user_no` IS NULL;
 
 -- 会员积分与等级一致性校准（金卡/钻石会员积分需高于对应门槛）
 UPDATE `ums_member` SET `points` = 2600 WHERE `id` = 1;

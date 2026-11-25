@@ -9,7 +9,7 @@
             {{ info.nickname }}
             <level-badge :level="info.level" class="big-badge" />
           </h2>
-          <p>账号 {{ info.username }}</p>
+          <p>账号 {{ info.username }}<span v-if="info.userNo" class="user-no"> · 编号 {{ info.userNo }}</span></p>
         </div>
         <div class="stat-chips">
           <div class="stat-chip">

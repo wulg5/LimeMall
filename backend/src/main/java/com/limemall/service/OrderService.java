@@ -215,6 +215,20 @@ public class OrderService {
         // 解析生效中的秒杀价（服务端权威价格，覆盖 SKU 常规售价）
         Map<Long, SmsFlashSale> flashMap = flashSaleService.activeSkuMap(quantities.keySet());
 
+        // 秒杀每人限购校验（时间窗口内有效购买数量 + 本次请求数量不得超过限购数）
+        for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
+            SmsFlashSale flash = flashMap.get(entry.getKey());
+            if (flash == null) {
+                continue;
+            }
+            int limit = flash.getPerUserLimit() == null ? 1 : flash.getPerUserLimit();
+            int bought = itemMapper.sumPurchasedInWindow(memberId, entry.getKey(),
+                    flash.getStartTime(), flash.getEndTime());
+            if (bought + entry.getValue() > limit) {
+                throw new BusinessException("该秒杀商品每人限购 " + limit + " 件，您已购买 " + bought + " 件");
+            }
+        }
+
         List<OmsOrderItem> items = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {

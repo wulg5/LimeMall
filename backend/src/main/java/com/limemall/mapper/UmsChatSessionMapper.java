@@ -18,7 +18,7 @@ public interface UmsChatSessionMapper extends BaseMapper<UmsChatSession> {
     /** 待接入队列：进行中且未被分配的会话 */
     @Select("""
             SELECT s.id AS id, s.member_id AS memberId, m.nickname AS memberNickname,
-                   m.username AS memberUsername, m.avatar AS memberAvatar,
+                   m.username AS memberUsername, m.avatar AS memberAvatar, m.level AS memberLevel, m.user_no AS memberUserNo,
                    s.agent_id AS agentId, a.nickname AS agentNickname,
                    s.status AS status, s.create_time AS createTime,
                    s.assign_time AS assignTime, s.end_time AS endTime,
@@ -36,7 +36,7 @@ public interface UmsChatSessionMapper extends BaseMapper<UmsChatSession> {
     /** 我的接待会话：进行中且分配给当前客服 */
     @Select("""
             SELECT s.id AS id, s.member_id AS memberId, m.nickname AS memberNickname,
-                   m.username AS memberUsername, m.avatar AS memberAvatar,
+                   m.username AS memberUsername, m.avatar AS memberAvatar, m.level AS memberLevel, m.user_no AS memberUserNo,
                    s.agent_id AS agentId, a.nickname AS agentNickname,
                    s.status AS status, s.create_time AS createTime,
                    s.assign_time AS assignTime, s.end_time AS endTime,

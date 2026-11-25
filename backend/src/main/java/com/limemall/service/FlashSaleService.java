@@ -66,6 +66,7 @@ public class FlashSaleService {
         flash.setName(dto.getName());
         flash.setSkuId(dto.getSkuId());
         flash.setFlashPrice(dto.getFlashPrice());
+        flash.setPerUserLimit(dto.getPerUserLimit() == null ? 1 : dto.getPerUserLimit());
         flash.setStartTime(dto.getStartTime());
         flash.setEndTime(dto.getEndTime());
         flash.setStatus(dto.getStatus());

@@ -20,6 +20,12 @@ public class ChatSessionVO {
 
     private String memberAvatar;
 
+    /** 会员业务编号（不可遍历，客服对接用） */
+    private String memberUserNo;
+
+    /** 会员等级：1普通 2银卡 3金卡 4钻石（客服工作台展示徽章） */
+    private Integer memberLevel;
+
     private Long agentId;
 
     private String agentNickname;

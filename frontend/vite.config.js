@@ -22,11 +22,18 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:18080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        // 同源代理：剥离 Origin 头，避免浏览器对 POST 携带的 Origin 被后端 CORS 误拦
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+        }
       },
       '/uploads': {
         target: 'http://127.0.0.1:18080',
-        changeOrigin: true
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+        }
       }
     }
   }

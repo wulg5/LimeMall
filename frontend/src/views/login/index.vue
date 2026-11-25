@@ -34,6 +34,12 @@
           <el-form-item prop="password">
             <el-input v-model="form.password" type="password" show-password placeholder="密码" :prefix-icon="Lock" />
           </el-form-item>
+          <el-form-item v-if="needCaptcha" prop="captchaCode">
+            <div class="captcha-row">
+              <el-input v-model="form.captchaCode" placeholder="图形验证码" :prefix-icon="Key" maxlength="4" />
+              <img :src="captchaImage" class="captcha-img" alt="验证码" title="看不清？点击刷新" @click="loadCaptcha" />
+            </div>
+          </el-form-item>
           <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
             登 录
           </el-button>
@@ -55,8 +61,9 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
+import { Lock, User, Key } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { getCaptcha } from '@/api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -64,7 +71,9 @@ const userStore = useUserStore()
 
 const formRef = ref()
 const loading = ref(false)
-const form = reactive({ username: 'admin', password: 'admin123' })
+const needCaptcha = ref(false)
+const captchaImage = ref('')
+const form = reactive({ username: 'admin', password: 'admin123', captchaId: '', captchaCode: '' })
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
@@ -82,6 +91,13 @@ function fillAccount(account) {
   form.password = 'admin123'
 }
 
+async function loadCaptcha() {
+  const data = await getCaptcha()
+  form.captchaId = data.captchaId
+  form.captchaCode = ''
+  captchaImage.value = data.image
+}
+
 async function handleLogin() {
   await formRef.value.validate()
   loading.value = true
@@ -90,6 +106,12 @@ async function handleLogin() {
     await userStore.fetchInfo()
     ElMessage.success('登录成功，欢迎回来')
     router.push(route.query.redirect || '/admin/dashboard')
+  } catch (e) {
+    // 连续失败 2 次后服务端要求验证码：展示并刷新验证码
+    if ((e?.message || '').includes('验证码')) {
+      needCaptcha.value = true
+      await loadCaptcha()
+    }
   } finally {
     loading.value = false
   }
@@ -253,6 +275,20 @@ async function handleLogin() {
   letter-spacing: 6px;
   border-radius: 10px;
   margin-top: 6px;
+}
+
+.captcha-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.captcha-img {
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .demo-accounts {

@@ -28,6 +28,12 @@ public class FlashSaleSaveDTO {
     @DecimalMin(value = "0.01", message = "秒杀价必须大于 0")
     private BigDecimal flashPrice;
 
+    /** 每人限购数量（默认 1） */
+    @NotNull(message = "请填写每人限购数量")
+    @jakarta.validation.constraints.Min(value = 1, message = "每人限购至少 1 件")
+    @jakarta.validation.constraints.Max(value = 99, message = "每人限购最多 99 件")
+    private Integer perUserLimit;
+
     @NotNull(message = "请选择开始时间")
     private LocalDateTime startTime;
 

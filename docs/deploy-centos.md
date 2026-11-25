@@ -114,6 +114,8 @@ Environment=LIME_UPLOAD_DIR=/opt/limemall/uploads
 Environment=SERVER_PORT=18080
 # 未支付订单自动关闭时限（分钟，默认 30）
 Environment=ORDER_PAY_TIMEOUT_MINUTES=30
+# 跨域白名单（同源部署可保持默认；如需前端独立域访问后端，填入前端 https 域名逗号分隔）
+Environment=CORS_ALLOWED_ORIGINS=https://你的前端域名
 ExecStart=/opt/jdk-21/bin/java -Xms256m -Xmx512m -jar /opt/limemall/limemall-backend.jar
 Restart=always
 RestartSec=5
@@ -174,6 +176,8 @@ server {
     # 后端接口：/api/** -> Spring Boot（注意 proxy_pass 末尾斜杠会去掉 /api 前缀）
     location /api/ {
         proxy_pass http://127.0.0.1:18080/;
+        # 同源部署：剥离 Origin 头，避免浏览器对 POST 请求携带的 Origin 被后端 CORS 校验误拦
+        proxy_set_header Origin "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

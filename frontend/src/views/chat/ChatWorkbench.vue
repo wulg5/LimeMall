@@ -59,6 +59,8 @@
           <div class="main-header">
             <div class="mh-left">
               <span class="mh-name">{{ active.memberNickname || active.memberUsername }}</span>
+              <level-badge :level="active.memberLevel || 1" />
+              <span v-if="active.memberUserNo" class="mh-user-no">{{ active.memberUserNo }}</span>
               <el-tag size="small" :type="active.status === 0 ? 'success' : 'info'">
                 {{ active.status === 0 ? '进行中' : '已结束' }}
               </el-tag>
@@ -110,6 +112,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { chatClaim, chatEnd, chatHistory, chatMine, chatQueue, chatReply, chatSessionMessages } from '@/api/chat'
+import LevelBadge from '@/components/LevelBadge.vue'
 
 const userStore = useUserStore()
 
@@ -372,6 +375,12 @@ async function handleSend() {
 .mh-agent {
   font-size: 12px;
   color: #9ca3af;
+}
+
+.mh-user-no {
+  font-size: 12px;
+  color: #9ca3af;
+  font-family: Consolas, monospace;
 }
 
 .thread {

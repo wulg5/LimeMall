@@ -17,4 +17,10 @@ public class LoginDTO {
 
     /** 密码是否为前端 RSA 加密后的密文（true 时 password 为 Base64 密文） */
     private Boolean encrypted;
+
+    /** 图形验证码ID（连续失败 2 次后必填） */
+    private String captchaId;
+
+    /** 图形验证码内容（连续失败 2 次后必填） */
+    private String captchaCode;
 }

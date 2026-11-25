@@ -5,17 +5,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import jakarta.servlet.http.HttpServletRequest;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
 
 /**
  * Web 层配置。
- * 1. 跨域配置：默认仅允许本机开发来源（环境变量 CORS_ALLOWED_ORIGINS 可覆盖，
- *    逗号分隔）；生产环境经 Nginx 同源部署时无需跨域；
+ * 1. 跨域策略：默认放行本机与私有网段（10/8、172.16/12、192.168/16）来源，
+ *    以及 CORS_ALLOWED_ORIGINS 配置的额外域名；其余来源拒绝。
+ *    注意：开发代理（Vite）与生产反代（Nginx）均剥离 Origin，同源部署不受影响；
  * 2. 静态资源映射：上传的图片通过 /uploads/** 直接访问。
  */
 @Configuration
@@ -24,22 +26,63 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${limemall.upload-dir}")
     private String uploadDir;
 
-    /** 允许的跨域来源（默认本机前端开发地址；同源部署不受影响） */
-    @Value("${limemall.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
-    private String allowedOrigins;
+    /** 额外允许的来源（逗号分隔完整 origin，用于公网前端独立部署场景） */
+    @Value("${limemall.cors.allowed-origins:}")
+    private String extraOrigins;
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim).filter(item -> !item.isEmpty()).toList());
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
+        List<String> extras = Arrays.stream(extraOrigins.split(","))
+                .map(String::trim).filter(item -> !item.isEmpty()).toList();
+        return (HttpServletRequest request) -> {
+            CorsConfiguration config = new CorsConfiguration();
+            config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+            config.setAllowedHeaders(List.of("*"));
+            config.setAllowCredentials(true);
+            config.setMaxAge(3600L);
+            String origin = request.getHeader("Origin");
+            if (origin != null && (extras.contains(origin) || isTrustedOrigin(origin))) {
+                config.setAllowedOrigins(List.of(origin));
+            } else {
+                config.setAllowedOrigins(List.of());
+            }
+            return config;
+        };
+    }
+
+    /** 本机与私有网段来源放行（开发/局域网演示场景），其余拒绝 */
+    private boolean isTrustedOrigin(String origin) {
+        try {
+            URI uri = URI.create(origin);
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+            if ("localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host)) {
+                return true;
+            }
+            return host.startsWith("10.")
+                    || host.startsWith("192.168.")
+                    || is172Private(host);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean is172Private(String host) {
+        if (!host.startsWith("172.")) {
+            return false;
+        }
+        String[] parts = host.split("\\.");
+        if (parts.length < 2) {
+            return false;
+        }
+        try {
+            int second = Integer.parseInt(parts[1]);
+            return second >= 16 && second <= 31;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     @Override

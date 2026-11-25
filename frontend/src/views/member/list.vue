@@ -36,6 +36,9 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column label="用户编号" width="140">
+          <template #default="{ row }"><span class="user-no">{{ row.userNo || '-' }}</span></template>
+        </el-table-column>
         <el-table-column prop="phone" label="手机号" width="140" />
         <el-table-column label="等级" width="120">
           <template #default="{ row }">
@@ -128,5 +131,11 @@ async function handleToggle(row, value) {
 .username {
   font-size: 12px;
   color: #9ca3af;
+}
+
+.user-no {
+  font-size: 12.5px;
+  color: #6b7280;
+  font-family: Consolas, monospace;
 }
 </style>

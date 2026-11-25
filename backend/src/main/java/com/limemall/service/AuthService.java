@@ -40,6 +40,7 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final LoginAttemptService loginAttemptService;
     private final com.limemall.security.CryptoService cryptoService;
+    private final CaptchaService captchaService;
 
     /**
      * 管理员登录：校验账号密码与状态，签发 JWT 令牌。
@@ -48,6 +49,16 @@ public class AuthService {
     public LoginVO login(LoginDTO dto) {
         String attemptKey = "admin:" + dto.getUsername();
         loginAttemptService.checkBlocked(attemptKey);
+        // 验证码门槛：同一账号连续失败 2 次后，登录必须携带有效图形验证码（防脚本爆破）
+        if (loginAttemptService.failureCount(attemptKey) >= 2) {
+            if (dto.getCaptchaId() == null || dto.getCaptchaId().isBlank()
+                    || dto.getCaptchaCode() == null || dto.getCaptchaCode().isBlank()) {
+                throw new BusinessException("请输入图形验证码");
+            }
+            if (!captchaService.verify(dto.getCaptchaId(), dto.getCaptchaCode())) {
+                throw new BusinessException("验证码错误或已过期，请刷新重试");
+            }
+        }
         UmsAdmin admin = adminMapper.selectOne(new LambdaQueryWrapper<UmsAdmin>()
                 .eq(UmsAdmin::getUsername, dto.getUsername()));
         // 前端按 RSA-OAEP 加密传输的密码在此解密（兼容未加密的直连调用）

@@ -16,6 +16,9 @@
         <el-table-column label="秒杀价" width="120">
           <template #default="{ row }"><span class="flash-price">{{ money(row.flashPrice) }}</span></template>
         </el-table-column>
+        <el-table-column label="每人限购" width="100">
+          <template #default="{ row }">{{ row.perUserLimit }} 件</template>
+        </el-table-column>
         <el-table-column label="活动时间" min-width="220">
           <template #default="{ row }">{{ row.startTime }} ~ {{ row.endTime }}</template>
         </el-table-column>
@@ -62,6 +65,10 @@
         <el-form-item label="秒杀价" prop="flashPrice">
           <el-input-number v-model="form.flashPrice" :min="0.01" :precision="2" :controls="false" style="width: 200px" />
           <span class="form-tip">必须低于 SKU 售价</span>
+        </el-form-item>
+        <el-form-item label="每人限购" prop="perUserLimit">
+          <el-input-number v-model="form.perUserLimit" :min="1" :max="99" />
+          <span class="form-tip">同一会员在活动期内最多可购买件数（服务端强制校验）</span>
         </el-form-item>
         <el-form-item label="活动时间" prop="timeRange">
           <el-date-picker v-model="form.timeRange" type="datetimerange" value-format="YYYY-MM-DD HH:mm:ss"
@@ -110,6 +117,7 @@ const rules = {
   skuId: [{ required: true, message: '请选择 SKU', trigger: 'change' }],
   name: [{ required: true, message: '请填写活动名称', trigger: 'blur' }],
   flashPrice: [{ required: true, message: '请填写秒杀价', trigger: 'blur' }],
+  perUserLimit: [{ required: true, message: '请填写每人限购数量', trigger: 'blur' }],
   timeRange: [{ required: true, message: '请选择活动时间', trigger: 'change' }]
 }
 
@@ -140,6 +148,7 @@ async function openDialog(row) {
       skuId: row.skuId,
       name: row.name,
       flashPrice: Number(row.flashPrice),
+      perUserLimit: row.perUserLimit || 1,
       timeRange: [row.startTime, row.endTime],
       status: row.status
     })
@@ -155,7 +164,7 @@ async function openDialog(row) {
   } else {
     Object.assign(form, {
       id: null, productId: null, skuId: null, name: '',
-      flashPrice: null, timeRange: null, status: 1
+      flashPrice: null, timeRange: null, status: 1, perUserLimit: 1
     })
   }
   dialogVisible.value = true
@@ -176,6 +185,7 @@ async function handleSave() {
       name: form.name,
       skuId: form.skuId,
       flashPrice: form.flashPrice,
+      perUserLimit: form.perUserLimit,
       startTime: form.timeRange[0],
       endTime: form.timeRange[1],
       status: form.status

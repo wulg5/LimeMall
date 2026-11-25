@@ -57,6 +57,7 @@ public class MemberService {
     private MemberVO toVO(UmsMember member) {
         MemberVO vo = new MemberVO();
         vo.setId(member.getId());
+        vo.setUserNo(member.getUserNo());
         vo.setUsername(member.getUsername());
         vo.setNickname(member.getNickname());
         vo.setPhone(member.getPhone());
