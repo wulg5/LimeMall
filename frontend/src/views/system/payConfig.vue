@@ -44,8 +44,8 @@
         </el-form-item>
 
         <el-form-item label="异步通知地址">
-          <el-input v-model="form.notifyUrl" placeholder="https://你的域名/api/portal/pay/alipay/notify" />
-          <span class="form-tip">必须公网可访问；本地开发可用内网穿透工具映射</span>
+          <el-input v-model="form.notifyUrl" placeholder="https://你的域名/api/portal/pay/alipay/notify（无公网可留空）" />
+          <span class="form-tip">有公网时填写以获得异步通知；无公网可留空——支付回跳验签/「刷新支付状态」查单照常入账</span>
         </el-form-item>
 
         <el-form-item label="同步跳转地址">

@@ -350,6 +350,30 @@ public class OrderService {
     }
 
     /**
+     * 主动查单确认支付（无公网回调场景：支付宝收银台付款后，前端回跳或点击刷新触发）。
+     * 查询结果由 AlipayService 验签后返回，金额与单号在本地再做一次严格比对。
+     */
+    @Transactional
+    public boolean syncPayQuery(Long memberId, Long id) {
+        OmsOrder order = getMemberOrder(memberId, id);
+        if (order.getStatus() != STATUS_UNPAID) {
+            return order.getStatus() == STATUS_UNSHIPPED
+                    || order.getStatus() == STATUS_SHIPPED
+                    || order.getStatus() == STATUS_COMPLETED;
+        }
+        AlipayService.VerifiedTrade trade = alipayService.queryTrade(order.getOrderSn());
+        if (!"TRADE_SUCCESS".equals(trade.tradeStatus()) && !"TRADE_FINISHED".equals(trade.tradeStatus())) {
+            return false;
+        }
+        if (!order.getOrderSn().equals(trade.outTradeNo())
+                || trade.totalAmount().compareTo(order.getPayAmount()) != 0) {
+            throw new BusinessException("支付金额与订单不符");
+        }
+        markPaid(order);
+        return true;
+    }
+
+    /**
      * 支付入账（支付宝异步通知调用）：以订单号定位，金额校验 + 幂等。
      */
     @Transactional

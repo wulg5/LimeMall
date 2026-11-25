@@ -105,6 +105,16 @@ export function payOrder(id) {
   return request.post(`/portal/orders/${id}/pay`)
 }
 
+/** 主动查单确认支付（本地无公网回调时使用） */
+export function syncPayOrder(id) {
+  return request.post(`/portal/orders/${id}/sync-pay`)
+}
+
+/** 支付宝同步回跳验签入账 */
+export function syncPayNotify(params) {
+  return request.post('/portal/pay/alipay/sync-notify', params)
+}
+
 export function cancelOrder(id) {
   return request.post(`/portal/orders/${id}/cancel`)
 }

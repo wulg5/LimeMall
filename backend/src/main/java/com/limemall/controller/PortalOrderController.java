@@ -62,6 +62,12 @@ public class PortalOrderController {
         return Result.ok(orderService.pay(SecurityUtils.getMemberId(), id));
     }
 
+    @PostMapping("/{id}/sync-pay")
+    @Operation(summary = "主动查单确认支付（本地无公网回调时使用）")
+    public Result<Boolean> syncPay(@PathVariable Long id) {
+        return Result.ok(orderService.syncPayQuery(SecurityUtils.getMemberId(), id));
+    }
+
     @PostMapping("/{id}/cancel")
     @Operation(summary = "取消订单（仅待付款）")
     public Result<Void> cancel(@PathVariable Long id) {

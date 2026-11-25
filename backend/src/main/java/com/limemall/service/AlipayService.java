@@ -1,5 +1,7 @@
 package com.limemall.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.limemall.common.BusinessException;
 import com.limemall.config.AlipayProperties;
 import com.limemall.dto.PayConfigSaveDTO;
@@ -10,7 +12,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -18,6 +25,7 @@ import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
@@ -48,6 +56,7 @@ public class AlipayService {
 
     private final AlipayProperties envProperties;
     private final SysConfigService configService;
+    private final ObjectMapper objectMapper;
 
     private volatile String cachedPrivateRaw;
     private volatile PrivateKey cachedPrivateKey;
@@ -180,6 +189,154 @@ public class AlipayService {
             return verifier.verify(Base64.getDecoder().decode(sign));
         } catch (Exception e) {
             log.warn("支付宝通知验签异常: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    // ==================================================================
+    // 主动查单（alipay.trade.query）：服务器出站请求，无需公网回调
+    // ==================================================================
+
+    /** 验签通过的查单结果 */
+    public record VerifiedTrade(String outTradeNo, String tradeStatus, BigDecimal totalAmount) {
+    }
+
+    /**
+     * 主动查询支付宝订单状态。
+     * 适用场景：无公网回调能力时（本地开发），前端在支付回跳或点击「刷新支付状态」时触发；
+     * 响应报文按官方规则验签（alipay_trade_query_response 节点原文 + 根 sign），失败即拒绝。
+     */
+    public VerifiedTrade queryTrade(String orderSn) {
+        ResolvedConfig config = resolve();
+        if (!config.enabled()) {
+            throw new BusinessException("支付宝支付未启用");
+        }
+        String bizContent = "{\"out_trade_no\":\"" + orderSn + "\"}";
+        TreeMap<String, String> params = new TreeMap<>();
+        params.put("app_id", config.appId());
+        params.put("method", "alipay.trade.query");
+        params.put("format", "JSON");
+        params.put("charset", "utf-8");
+        params.put("sign_type", "RSA2");
+        params.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        params.put("version", "1.0");
+        params.put("biz_content", bizContent);
+        String content = buildContent(params);
+        params.put("sign", rsaSign(content, parsePrivateKey(config.privateKey())));
+        String formBody = params.entrySet().stream()
+                .filter(entry -> StringUtils.hasText(entry.getValue()))
+                .map(entry -> urlEncode(entry.getKey()) + "=" + urlEncode(entry.getValue()))
+                .collect(Collectors.joining("&"));
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(config.gatewayUrl()))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+                    .POST(HttpRequest.BodyPublishers.ofString(formBody, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = client.send(request,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != 200) {
+                throw new BusinessException("支付宝网关访问失败（HTTP " + response.statusCode() + "）");
+            }
+            return parseQueryResponse(response.body(), config.publicKey());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("支付宝查单失败: {}", e.getMessage());
+            throw new BusinessException("查询支付状态失败，请稍后重试");
+        }
+    }
+
+    private VerifiedTrade parseQueryResponse(String body, String publicKey) throws Exception {
+        // 响应格式：{"alipay_trade_query_response":{...},"sign":"..."}，验签原文为中间节点 JSON
+        int keyIndex = body.indexOf("\"alipay_trade_query_response\"");
+        if (keyIndex < 0) {
+            throw new BusinessException("支付宝响应格式异常");
+        }
+        int objectStart = body.indexOf('{', keyIndex);
+        if (objectStart < 0) {
+            throw new BusinessException("支付宝响应格式异常");
+        }
+        int objectEnd = findMatchingBrace(body, objectStart);
+        String nodeText = body.substring(objectStart, objectEnd + 1);
+        String sign = extractRootSign(body, objectEnd + 1);
+        if (!verifyNodeSign(nodeText, sign, publicKey)) {
+            throw new BusinessException("支付宝查单响应验签失败");
+        }
+        JsonNode node = objectMapper.readTree(nodeText);
+        String code = node.path("code").asText("");
+        if (!"10000".equals(code)) {
+            throw new BusinessException("查单失败：" + node.path("sub_msg").asText(node.path("msg").asText("未知错误")));
+        }
+        BigDecimal totalAmount;
+        try {
+            totalAmount = new BigDecimal(node.path("total_amount").asText("0"));
+        } catch (NumberFormatException e) {
+            totalAmount = BigDecimal.ZERO;
+        }
+        return new VerifiedTrade(
+                node.path("out_trade_no").asText(""),
+                node.path("trade_status").asText(""),
+                totalAmount);
+    }
+
+    /** 扫描定位 JSON 对象结尾（正确处理字符串内大括号与转义） */
+    private int findMatchingBrace(String text, int start) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        throw new BusinessException("支付宝响应解析失败（JSON 不完整）");
+    }
+
+    /** 提取根节点 sign 的值 */
+    private String extractRootSign(String body, int fromIndex) {
+        int signKey = body.indexOf("\"sign\"", fromIndex);
+        if (signKey < 0) {
+            throw new BusinessException("支付宝响应缺少签名");
+        }
+        int colon = body.indexOf(':', signKey);
+        int valueStart = body.indexOf('"', colon);
+        int valueEnd = body.indexOf('"', valueStart + 1);
+        if (colon < 0 || valueStart < 0 || valueEnd < 0) {
+            throw new BusinessException("支付宝响应缺少签名");
+        }
+        return body.substring(valueStart + 1, valueEnd);
+    }
+
+    private boolean verifyNodeSign(String nodeText, String sign, String publicKey) {
+        try {
+            Signature verifier = Signature.getInstance("SHA256withRSA");
+            verifier.initVerify(parsePublicKey(publicKey));
+            verifier.update(nodeText.getBytes(StandardCharsets.UTF_8));
+            return verifier.verify(Base64.getDecoder().decode(sign));
+        } catch (Exception e) {
             return false;
         }
     }
