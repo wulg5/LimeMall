@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { login as loginApi, getInfo } from '@/api/auth'
+import { buildLoginPayload } from '@/utils/crypto'
 
 /**
  * 用户登录态 Store。
@@ -21,7 +22,8 @@ export const useUserStore = defineStore('user', {
 
   actions: {
     async login(form) {
-      const data = await loginApi(form)
+      const payload = await buildLoginPayload(form)
+      const data = await loginApi(payload)
       this.token = data.token
       localStorage.setItem('lime_token', data.token)
     },

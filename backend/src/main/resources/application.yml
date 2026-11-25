@@ -19,13 +19,16 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    # 控制台打印 SQL，便于开发调试与课设演示
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 生产默认关闭 SQL 控制台打印（避免日志泄露参数/影响性能）；
+    # 需要调试时临时将 logging.level.com.limemall.mapper 设为 debug
   global-config:
     banner: false
 
 # 业务自定义配置（支持环境变量覆盖，便于服务器部署）
 limemall:
+  # 跨域白名单（逗号分隔；同源部署无需跨域）
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   jwt:
     # JWT 签名密钥（HS256，长度必须 >= 32 字节；生产环境请通过 JWT_SECRET 环境变量替换）
     secret: ${JWT_SECRET:LimeMall-Course-Design-2026-JWT-Secret-Key-LimeGreen}

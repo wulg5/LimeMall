@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { portalLogin, getMe } from '@/api/portal'
+import { buildLoginPayload } from '@/utils/crypto'
 
 /**
  * 商城前台会员登录态 Store。
@@ -13,7 +14,8 @@ export const useShopStore = defineStore('shop', {
 
   actions: {
     async login(form) {
-      const data = await portalLogin(form)
+      const payload = await buildLoginPayload(form)
+      const data = await portalLogin(payload)
       this.token = data.token
       localStorage.setItem('lime_shop_token', data.token)
     },

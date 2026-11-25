@@ -51,7 +51,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 认证接口与静态资源
                         .requestMatchers("/admin/auth/login", "/portal/auth/login", "/portal/auth/register",
-                        "/portal/pay/alipay/notify").permitAll()
+                        "/auth/public-key", "/portal/pay/alipay/notify").permitAll()
                         .requestMatchers("/portal/public/**", "/uploads/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/favicon.ico").permitAll()
                         // 业务接口按角色隔离

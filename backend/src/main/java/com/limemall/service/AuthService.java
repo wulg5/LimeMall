@@ -39,6 +39,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final LoginAttemptService loginAttemptService;
+    private final com.limemall.security.CryptoService cryptoService;
 
     /**
      * 管理员登录：校验账号密码与状态，签发 JWT 令牌。
@@ -49,7 +50,11 @@ public class AuthService {
         loginAttemptService.checkBlocked(attemptKey);
         UmsAdmin admin = adminMapper.selectOne(new LambdaQueryWrapper<UmsAdmin>()
                 .eq(UmsAdmin::getUsername, dto.getUsername()));
-        if (admin == null || !passwordEncoder.matches(dto.getPassword(), admin.getPassword())) {
+        // 前端按 RSA-OAEP 加密传输的密码在此解密（兼容未加密的直连调用）
+        String rawPassword = Boolean.TRUE.equals(dto.getEncrypted())
+                ? cryptoService.decrypt(dto.getPassword())
+                : dto.getPassword();
+        if (admin == null || !passwordEncoder.matches(rawPassword, admin.getPassword())) {
             loginAttemptService.recordFailure(attemptKey);
             throw new BusinessException("账号或密码错误");
         }

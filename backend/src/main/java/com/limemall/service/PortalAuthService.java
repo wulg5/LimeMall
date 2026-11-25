@@ -29,6 +29,7 @@ public class PortalAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final LoginAttemptService loginAttemptService;
+    private final com.limemall.security.CryptoService cryptoService;
 
     /**
      * 会员注册：账号/手机号唯一，默认普通会员。
@@ -68,7 +69,11 @@ public class PortalAuthService {
         loginAttemptService.checkBlocked(attemptKey);
         UmsMember member = memberMapper.selectOne(new LambdaQueryWrapper<UmsMember>()
                 .eq(UmsMember::getUsername, dto.getUsername()));
-        if (member == null || !passwordEncoder.matches(dto.getPassword(), member.getPassword())) {
+        // 前端按 RSA-OAEP 加密传输的密码在此解密（兼容未加密的直连调用）
+        String rawPassword = Boolean.TRUE.equals(dto.getEncrypted())
+                ? cryptoService.decrypt(dto.getPassword())
+                : dto.getPassword();
+        if (member == null || !passwordEncoder.matches(rawPassword, member.getPassword())) {
             loginAttemptService.recordFailure(attemptKey);
             throw new BusinessException("账号或密码错误");
         }
