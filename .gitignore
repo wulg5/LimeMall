@@ -1,0 +1,18 @@
+# 构建产物与依赖
+backend/target/
+frontend/node_modules/
+frontend/dist/
+
+# 运行时上传目录（保留目录本身）
+uploads/*
+!uploads/.gitkeep
+
+# IDE 与系统文件
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
