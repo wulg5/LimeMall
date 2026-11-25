@@ -229,3 +229,28 @@ sudo systemctl restart limemall-backend
 # 备份数据库
 mysqldump -uroot -p --default-character-set=utf8mb4 lime_mall > /opt/limemall/backup_$(date +%F).sql
 ```
+
+---
+
+## 七、可选：接入支付宝沙箱真实支付
+
+后端已内置沙箱支付（手工 RSA2 签名，无需额外依赖），配置环境变量即启用：
+
+```bash
+# /etc/systemd/system/limemall-backend.service 的 [Service] 段追加：
+Environment=ALIPAY_APP_ID=你的沙箱APPID
+Environment=ALIPAY_PRIVATE_KEY=应用私钥Base64（单行，无头尾）
+Environment=ALIPAY_PUBLIC_KEY=支付宝公钥Base64（单行，无头尾）
+Environment=ALIPAY_NOTIFY_URL=https://你的域名/api/portal/pay/alipay/notify
+Environment=ALIPAY_RETURN_URL=https://你的域名/shop/orders
+```
+
+```bash
+systemctl daemon-reload && systemctl restart limemall-backend
+```
+
+注意事项：
+- `ALIPAY_NOTIFY_URL` 必须公网可访问（本系统 Nginx 已将 `/api/` 反代到后端，直接使用 https 域名即可）；
+- 沙箱买家账号在开放平台「沙箱账号」页面获取，付款后异步通知通常数秒内到达；
+- 未配置以上变量时，前台支付自动回退为模拟支付（本地演示不受影响）；
+- 验签失败或金额不符的回调一律拒绝并记录日志（可在 `journalctl -u limemall-backend` 查看）。

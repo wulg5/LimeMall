@@ -25,17 +25,17 @@
 
       <section class="banner-col">
         <el-carousel height="318px" :interval="5000" arrow="hover" indicator-position="none">
-          <el-carousel-item v-for="banner in banners" :key="banner.title">
-            <div class="banner" :style="{ background: banner.bg }" @click="$router.push(banner.link)">
+          <el-carousel-item v-for="banner in banners" :key="banner.id || banner.title">
+            <div class="banner" :style="{ background: bannerBg(banner) }" @click="$router.push(banner.linkUrl)">
               <div class="banner-copy">
                 <div class="banner-tag">{{ banner.tag }}</div>
                 <h2>{{ banner.title }}</h2>
                 <p>{{ banner.subtitle }}</p>
-                <span class="banner-btn">{{ banner.cta }}</span>
+                <span class="banner-btn">{{ banner.ctaText }}</span>
               </div>
               <div class="banner-art">
-                <img :src="banner.img1" class="art art1" alt="" />
-                <img :src="banner.img2" class="art art2" alt="" />
+                <img :src="banner.image1" class="art art1" alt="" />
+                <img :src="banner.image2" class="art art2" alt="" />
               </div>
             </div>
           </el-carousel-item>
@@ -85,24 +85,29 @@
       </aside>
     </div>
 
-    <!-- 限时特惠 -->
+    <!-- 限时特惠 / 秒杀 -->
     <section class="floor">
       <div class="floor-head">
-        <div class="floor-title">限时特惠 <span class="floor-sub">今日好价</span></div>
-        <div class="floor-extra">距本场结束 <b class="clock">{{ countdown }}</b></div>
+        <div class="floor-title">
+          限时特惠 <span class="floor-sub">今日好价</span>
+        </div>
+        <div class="floor-extra">
+          距本场结束 <b class="clock">{{ dealCountdown }}</b>
+        </div>
       </div>
       <div class="deal-grid">
-        <div v-for="product in dealProducts" :key="product.id" class="deal-card"
-             @click="$router.push(`/shop/product/${product.id}`)">
-          <img :src="product.mainPic || '/img/logo.svg'" alt="" />
+        <div v-for="item in dealItems" :key="item.key" class="deal-card"
+             @click="$router.push(`/shop/product/${item.productId}`)">
+          <img :src="item.pic || '/img/logo.svg'" alt="" />
           <div class="deal-info">
-            <div class="deal-name">{{ product.name }}</div>
+            <div class="deal-name">{{ item.name }}</div>
             <div class="deal-price">
-              <b>{{ money(product.price) }}</b>
-              <del v-if="product.originalPrice">{{ money(product.originalPrice) }}</del>
+              <b>{{ money(item.price) }}</b>
+              <del v-if="item.originalPrice">{{ money(item.originalPrice) }}</del>
             </div>
+            <div v-if="item.flash" class="flash-remain">秒杀进行中 · 剩 {{ remainTo(item.endTime) }}</div>
           </div>
-          <span class="deal-off">省 {{ discountOf(product) }} 元</span>
+          <span class="deal-off" :class="{ flash: item.flash }">{{ item.flash ? '秒杀' : '省 ' + item.save + ' 元' }}</span>
         </div>
       </div>
     </section>
@@ -124,7 +129,7 @@
         <div class="pi-title">积分商城</div>
         <p class="pi-desc">
           购物得积分，100 积分 = 1 元，可兑换全场优惠券<br />
-          金卡会员积分 1.2 倍 · 钻石会员 1.5 倍
+          金卡会员积分 1.2 倍 · 钻石会员 1.5 倍 · 积分 12 个月滚动过期
         </p>
         <el-button type="primary" @click="$router.push('/shop/points')">去兑换</el-button>
       </div>
@@ -153,7 +158,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
-import { getHome, getExchangeCoupons } from '@/api/portal'
+import {
+  getBanners,
+  getExchangeCoupons,
+  getFlashSales,
+  getHome,
+  getNotices
+} from '@/api/portal'
 import { useShopStore } from '@/stores/shop'
 import { money } from '@/utils/format'
 import ProductCard from '@/components/ProductCard.vue'
@@ -165,40 +176,41 @@ const categories = ref([])
 const hotProducts = ref([])
 const newProducts = ref([])
 const exchangeCoupons = ref([])
+const flashSales = ref([])
+const notices = ref([])
+const banners = ref([])
 const nowTs = ref(Date.now())
 let timer = null
 
-const banners = [
+/** 轮播默认值（接口无数据时的兜底，保证离线演示） */
+const DEFAULT_BANNERS = [
   {
-    tag: '数码焕新',
-    title: '轻装出行 · 桌面焕新',
+    id: 'd1', tag: '数码焕新', title: '轻装出行 · 桌面焕新',
     subtitle: '充电器 / 阅读器 / 键鼠周边，精选好物满 99 包邮',
-    cta: '立即选购',
-    link: '/shop/products?categoryId=1',
-    bg: 'linear-gradient(105deg, #0b3d33 0%, #0f766e 55%, #0d9488 100%)',
-    img1: '/img/products/p02.svg',
-    img2: '/img/products/p03.svg'
+    ctaText: '立即选购', linkUrl: '/shop/products?categoryId=1',
+    bgFrom: '#0b3d33', bgTo: '#0d9488',
+    image1: '/img/products/p02.svg', image2: '/img/products/p03.svg'
   },
   {
-    tag: '积分商城',
-    title: '积分当钱花',
+    id: 'd2', tag: '积分商城', title: '积分当钱花',
     subtitle: '100 积分抵 1 元，全场优惠券持续兑换中',
-    cta: '去兑换',
-    link: '/shop/points',
-    bg: 'linear-gradient(105deg, #7c2d12 0%, #b45309 55%, #d97706 100%)',
-    img1: '/img/products/p18.svg',
-    img2: '/img/products/p21.svg'
+    ctaText: '去兑换', linkUrl: '/shop/points',
+    bgFrom: '#7c2d12', bgTo: '#d97706',
+    image1: '/img/products/p18.svg', image2: '/img/products/p21.svg'
   },
   {
-    tag: '会员权益',
-    title: '金卡 / 钻石全场免运费',
+    id: 'd3', tag: '会员权益', title: '金卡 / 钻石全场免运费',
     subtitle: '购物累计成长值，等级自动升级，积分加速获取',
-    cta: '查看会员权益',
-    link: '/shop/member',
-    bg: 'linear-gradient(105deg, #1e1b4b 0%, #4338ca 55%, #6366f1 100%)',
-    img1: '/img/products/p17.svg',
-    img2: '/img/products/p26.svg'
+    ctaText: '查看会员权益', linkUrl: '/shop/member',
+    bgFrom: '#1e1b4b', bgTo: '#6366f1',
+    image1: '/img/products/p17.svg', image2: '/img/products/p26.svg'
   }
+]
+
+const DEFAULT_NOTICES = [
+  '全场满 99 元包邮，金卡及以上会员无门槛免运费',
+  '支持 7 天无理由退款，退款审核 24 小时内处理',
+  '客服在线 9:00 - 21:00，点击右下角悬浮窗咨询'
 ]
 
 const quickEntries = [
@@ -208,19 +220,47 @@ const quickEntries = [
   { short: '会', text: '会员中心', color: '#4338ca', link: '/shop/member' }
 ]
 
-const notices = [
-  '全场满 99 元包邮，金卡及以上会员无门槛免运费',
-  '支持 7 天无理由退款，退款审核 24 小时内处理',
-  '客服在线 9:00 - 21:00，点击右下角悬浮窗咨询'
-]
-
-/** 限时特惠：从热销商品中挑选折扣力度最大的 4 件 */
-const dealProducts = computed(() =>
-  [...hotProducts.value]
+/** 限时特惠数据：优先展示后台配置的秒杀，否则用热销商品折扣兜底 */
+const dealItems = computed(() => {
+  if (flashSales.value.length) {
+    return flashSales.value.slice(0, 4).map((flash) => ({
+      key: `f-${flash.id}`,
+      flash: true,
+      productId: flash.productId,
+      name: flash.productName,
+      pic: flash.mainPic,
+      price: Number(flash.flashPrice),
+      originalPrice: Number(flash.originalPrice),
+      endTime: flash.endTime,
+      save: 0
+    }))
+  }
+  return [...hotProducts.value]
     .filter((product) => Number(product.originalPrice) > Number(product.price))
     .sort((a, b) => discountOf(b) - discountOf(a))
     .slice(0, 4)
-)
+    .map((product) => ({
+      key: `p-${product.id}`,
+      flash: false,
+      productId: product.id,
+      name: product.name,
+      pic: product.mainPic,
+      price: Number(product.price),
+      originalPrice: Number(product.originalPrice),
+      save: discountOf(product)
+    }))
+})
+
+/** 秒杀场次倒计时（取最近结束的一场；无秒杀时倒计时到当日 24:00） */
+const dealCountdown = computed(() => {
+  let endTs
+  if (flashSales.value.length) {
+    endTs = Math.min(...flashSales.value.map((flash) => dayjs(flash.endTime).valueOf()))
+  } else {
+    endTs = dayjs(nowTs.value).endOf('day').valueOf()
+  }
+  return formatRemain(endTs - nowTs.value)
+})
 
 const pointsPreview = computed(() => {
   if (exchangeCoupons.value.length) {
@@ -233,15 +273,9 @@ const pointsPreview = computed(() => {
   ]
 })
 
-/** 距当日 24:00 的倒计时 */
-const countdown = computed(() => {
-  const end = dayjs(nowTs.value).endOf('day')
-  const diff = Math.max(0, end.valueOf() - nowTs.value)
-  const hours = String(Math.floor(diff / 3600000)).padStart(2, '0')
-  const minutes = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0')
-  const seconds = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0')
-  return `${hours}:${minutes}:${seconds}`
-})
+function bannerBg(banner) {
+  return `linear-gradient(105deg, ${banner.bgFrom || '#0b3d33'} 0%, ${banner.bgTo || '#0d9488'} 100%)`
+}
 
 function discountOf(product) {
   const original = Number(product.originalPrice || 0)
@@ -249,11 +283,31 @@ function discountOf(product) {
   return original > price ? (original - price).toFixed(0) : 0
 }
 
+function formatRemain(diff) {
+  const clamped = Math.max(0, diff)
+  const hours = String(Math.floor(clamped / 3600000)).padStart(2, '0')
+  const minutes = String(Math.floor((clamped % 3600000) / 60000)).padStart(2, '0')
+  const seconds = String(Math.floor((clamped % 60000) / 1000)).padStart(2, '0')
+  return `${hours}:${minutes}:${seconds}`
+}
+
+function remainTo(endTime) {
+  return formatRemain(dayjs(endTime).valueOf() - nowTs.value)
+}
+
 onMounted(async () => {
-  const data = await getHome()
-  categories.value = data.categories || []
-  hotProducts.value = data.hotProducts || []
-  newProducts.value = data.newProducts || []
+  const [homeData, bannerData, noticeData, flashData] = await Promise.all([
+    getHome(),
+    getBanners().catch(() => []),
+    getNotices().catch(() => []),
+    getFlashSales().catch(() => [])
+  ])
+  categories.value = homeData.categories || []
+  hotProducts.value = homeData.hotProducts || []
+  newProducts.value = homeData.newProducts || []
+  banners.value = bannerData.length ? bannerData : DEFAULT_BANNERS
+  notices.value = noticeData.length ? noticeData.map((notice) => notice.content) : DEFAULT_NOTICES
+  flashSales.value = flashData || []
   if (shopStore.token) {
     try {
       exchangeCoupons.value = await getExchangeCoupons()
@@ -513,6 +567,10 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.m-info {
+  min-width: 0;
+}
+
 .m-name {
   font-size: 14px;
   font-weight: 600;
@@ -686,6 +744,12 @@ onBeforeUnmount(() => {
   margin-left: 6px;
 }
 
+.flash-remain {
+  font-size: 11px;
+  color: #dc2626;
+  margin-top: 4px;
+}
+
 .deal-off {
   position: absolute;
   top: 0;
@@ -695,6 +759,10 @@ onBeforeUnmount(() => {
   font-size: 11px;
   padding: 3px 8px;
   border-radius: 12px 0 10px 0;
+}
+
+.deal-off.flash {
+  background: #b91c1c;
 }
 
 /* 商品网格 */

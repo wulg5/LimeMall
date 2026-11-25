@@ -2,7 +2,8 @@
   <div class="product-card" @click="$router.push(`/shop/product/${product.id}`)">
     <div class="pic-wrap">
       <img :src="product.mainPic || '/img/logo.svg'" :alt="product.name" loading="lazy" />
-      <span v-if="discount > 0" class="discount-tag">立省 {{ discount }} 元</span>
+      <span v-if="product.flashPrice" class="flash-tag">秒杀</span>
+      <span v-else-if="discount > 0" class="discount-tag">立省 {{ discount }} 元</span>
       <button class="quick-add" title="加入购物车" :disabled="adding" @click.stop="quickAdd">
         <el-icon><ShoppingCart /></el-icon>
         <span>{{ adding ? '添加中' : '加入购物车' }}</span>
@@ -18,10 +19,8 @@
       </div>
       <div class="bottom">
         <div class="price">
-          <b>{{ money(product.price) }}</b>
-          <del v-if="product.originalPrice && Number(product.originalPrice) > Number(product.price)">
-            {{ money(product.originalPrice) }}
-          </del>
+          <b>{{ money(currentPrice) }}</b>
+          <del v-if="origPrice > currentPrice">{{ money(origPrice) }}</del>
         </div>
         <div class="sales">已售 {{ product.sales }}</div>
       </div>
@@ -50,6 +49,15 @@ const discount = computed(() => {
   return original > price ? (original - price).toFixed(0) : 0
 })
 
+/** 当前展示价：秒杀进行中优先展示秒杀价，原价展示常规售价 */
+const currentPrice = computed(() =>
+  Number(props.product.flashPrice || props.product.price || 0)
+)
+
+const origPrice = computed(() =>
+  Number(props.product.flashPrice ? props.product.price : props.product.originalPrice || 0)
+)
+
 /** 快捷加购：取第一个有库存的 SKU 加入购物车 */
 async function quickAdd() {
   adding.value = true
@@ -66,7 +74,7 @@ async function quickAdd() {
       name: detail.name,
       pic: sku.pic || detail.mainPic,
       specs: specsToText(sku.specs),
-      price: Number(sku.price),
+      price: Number(sku.flashPrice || sku.price),
       stock: sku.stock,
       quantity: 1
     })
@@ -119,6 +127,20 @@ async function quickAdd() {
   font-size: 12px;
   padding: 3px 8px;
   border-radius: 8px;
+}
+
+.flash-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: linear-gradient(120deg, #b91c1c, #ef4444);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(185, 28, 28, 0.4);
 }
 
 .quick-add {

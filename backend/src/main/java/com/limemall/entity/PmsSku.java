@@ -1,6 +1,7 @@
 package com.limemall.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -19,6 +20,10 @@ public class PmsSku {
     /** 主键ID */
     @TableId(type = IdType.AUTO)
     private Long id;
+
+    /** 生效中的秒杀价（非表字段，仅用于前台展示；下单价格由服务端强制解析） */
+    @TableField(exist = false)
+    private BigDecimal flashPrice;
 
     /** 所属商品ID */
     private Long productId;

@@ -18,9 +18,14 @@
         </nav>
 
         <div class="shop-search">
-          <el-input v-model="keyword" placeholder="搜索商品" clearable @keyup.enter="handleSearch">
+          <el-autocomplete v-model="keyword" :fetch-suggestions="fetchSuggestions" :trigger-on-focus="false"
+                           placeholder="搜索商品" clearable style="width: 100%"
+                           @select="handleSelect" @keyup.enter="handleSearch">
             <template #prefix><el-icon><Search /></el-icon></template>
-          </el-input>
+            <template #default="{ item }">
+              <span class="suggest-item">{{ item.value }}</span>
+            </template>
+          </el-autocomplete>
         </div>
 
         <div class="shop-actions">
@@ -82,6 +87,7 @@ import { ElMessageBox } from 'element-plus'
 import { ArrowDown, Search, ShoppingCart } from '@element-plus/icons-vue'
 import { useShopStore } from '@/stores/shop'
 import { useCartStore } from '@/stores/cart'
+import { searchSuggest } from '@/api/portal'
 import { MEMBER_LEVEL } from '@/utils/format'
 import ShopChatWidget from '@/components/ShopChatWidget.vue'
 import LevelBadge from '@/components/LevelBadge.vue'
@@ -107,6 +113,34 @@ onMounted(async () => {
 
 function handleSearch() {
   router.push({ path: '/shop/products', query: { name: keyword.value || undefined } })
+}
+
+let suggestTimer = null
+let suggestCallback = null
+
+/** 搜索联想：300ms 防抖，回车直接搜索、点选直达商品详情 */
+function fetchSuggestions(query, callback) {
+  if (!query) {
+    callback([])
+    return
+  }
+  suggestCallback = callback
+  clearTimeout(suggestTimer)
+  suggestTimer = setTimeout(async () => {
+    try {
+      const list = await searchSuggest(query)
+      suggestionList = (list || []).map((item) => ({ value: item.name, id: item.id }))
+      suggestCallback(suggestionList)
+    } catch (e) {
+      suggestCallback([])
+    }
+  }, 300)
+}
+
+let suggestionList = []
+
+function handleSelect(item) {
+  router.push(`/shop/product/${item.id}`)
 }
 
 async function handleCommand(command) {

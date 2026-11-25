@@ -29,8 +29,9 @@
         <p class="sub-title">{{ detail.subTitle }}</p>
 
         <div class="price-bar">
-          <span class="price">{{ money(selectedSku ? selectedSku.price : detail.price) }}</span>
+          <span class="price">{{ money(selectedSku ? (selectedSku.flashPrice || selectedSku.price) : detail.price) }}</span>
           <del v-if="detail.originalPrice">{{ money(detail.originalPrice) }}</del>
+          <span v-if="selectedSku && selectedSku.flashPrice" class="flash-badge">秒杀价</span>
           <span class="sales">已售 {{ detail.sales }} {{ detail.unit }}</span>
         </div>
 
@@ -48,7 +49,8 @@
                  class="sku-item" :class="{ active: selectedSkuId === sku.id }"
                  @click="selectSku(sku)">
               <span>{{ specsToText(sku.specs) }}</span>
-              <b>{{ money(sku.price) }}</b>
+              <b>{{ money(sku.flashPrice || sku.price) }}</b>
+              <em v-if="sku.flashPrice" class="sku-flash">秒杀</em>
             </div>
           </div>
         </div>
@@ -181,7 +183,7 @@ function addToCart(buyNow) {
     name: detail.value.name,
     pic: selectedSku.value.pic || detail.value.mainPic,
     specs: specsToText(selectedSku.value.specs),
-    price: Number(selectedSku.value.price),
+    price: Number(selectedSku.value.flashPrice || selectedSku.value.price),
     stock: selectedSku.value.stock,
     quantity: Math.min(quantity.value, selectedSku.value.stock)
   }
@@ -281,6 +283,27 @@ function addToCart(buyNow) {
   margin-left: auto;
   color: #9ca3af;
   font-size: 13px;
+}
+
+.flash-badge {
+  background: linear-gradient(120deg, #b91c1c, #ef4444);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+  align-self: center;
+}
+
+.sku-flash {
+  font-style: normal;
+  font-size: 10px;
+  color: #ffffff;
+  background: #ef4444;
+  border-radius: 4px;
+  padding: 1px 5px;
+  align-self: flex-start;
 }
 
 .meta-row {

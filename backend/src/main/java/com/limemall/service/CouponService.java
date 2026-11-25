@@ -37,6 +37,7 @@ public class CouponService {
     private final SmsCouponMapper couponMapper;
     private final SmsCouponMemberMapper couponMemberMapper;
     private final UmsMemberMapper memberMapper;
+    private final PointsLedgerService pointsLedgerService;
 
     /** 分页查询优惠券（名称模糊、状态筛选） */
     public PageResult<SmsCoupon> page(long pageNum, long pageSize, String name, Integer status) {
@@ -305,6 +306,8 @@ public class CouponService {
         couponMember.setStatus(0);
         couponMember.setReceiveTime(now);
         couponMemberMapper.insert(couponMember);
+        // 积分批次账本：按先进先出扣减，保证 12 个月滚动过期口径一致
+        pointsLedgerService.deduct(memberId, coupon.getPointsPrice(), "积分兑换：" + coupon.getName());
     }
 
     // ==================================================================

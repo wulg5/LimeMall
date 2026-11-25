@@ -18,6 +18,9 @@ public class UmsChatMessage {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    /** 会话ID（消息归属于会话，一对一分派的基础） */
+    private Long sessionId;
+
     /** 会员ID（会话归属） */
     private Long memberId;
 

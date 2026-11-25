@@ -322,6 +322,7 @@ CREATE TABLE `sms_coupon_member` (
 DROP TABLE IF EXISTS `ums_chat_message`;
 CREATE TABLE `ums_chat_message` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `session_id`  BIGINT UNSIGNED DEFAULT NULL COMMENT '会话ID',
   `member_id`   BIGINT UNSIGNED NOT NULL COMMENT '会员ID（会话归属）',
   `admin_id`    BIGINT UNSIGNED DEFAULT NULL COMMENT '接待管理员ID（会员消息为空）',
   `from_type`   TINYINT      NOT NULL COMMENT '发送方：1会员 2管理员',
@@ -329,9 +330,28 @@ CREATE TABLE `ums_chat_message` (
   `is_read`     TINYINT      NOT NULL DEFAULT 0 COMMENT '已读：0否 1是',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
   PRIMARY KEY (`id`),
+  KEY `idx_session` (`session_id`),
   KEY `idx_member` (`member_id`),
   KEY `idx_member_read` (`member_id`, `from_type`, `is_read`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服聊天消息表';
+
+-- ---------------------------------------------------------------------
+-- 16.1 ums_chat_session 客服会话表（会话制 + 一对一分派）
+--     每个会员同一时间最多一个进行中会话；agent_id 为空=待接入
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `ums_chat_session`;
+CREATE TABLE `ums_chat_session` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `member_id`   BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
+  `agent_id`    BIGINT UNSIGNED DEFAULT NULL COMMENT '接待客服管理员ID（NULL=待接入）',
+  `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '状态：0进行中 1已结束',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '会话创建时间',
+  `assign_time` DATETIME     DEFAULT NULL COMMENT '接入时间',
+  `end_time`    DATETIME     DEFAULT NULL COMMENT '结束时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_member_status` (`member_id`, `status`),
+  KEY `idx_agent_status` (`agent_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服会话表';
 
 -- ---------------------------------------------------------------------
 -- 17. pms_comment 商品评价表
@@ -354,6 +374,101 @@ CREATE TABLE `pms_comment` (
   KEY `idx_member` (`member_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品评价表';
 
+-- ---------------------------------------------------------------------
+-- 18. cms_banner 首页轮播图（后台可配）
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `cms_banner`;
+CREATE TABLE `cms_banner` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tag`         VARCHAR(32)  NOT NULL DEFAULT '' COMMENT '角标文字',
+  `title`       VARCHAR(100) NOT NULL COMMENT '主标题',
+  `subtitle`    VARCHAR(255) DEFAULT NULL COMMENT '副标题',
+  `cta_text`    VARCHAR(32)  DEFAULT '立即查看' COMMENT '按钮文字',
+  `link_url`    VARCHAR(255) NOT NULL DEFAULT '/shop' COMMENT '跳转地址',
+  `bg_from`     VARCHAR(16)  NOT NULL DEFAULT '#0b3d33' COMMENT '渐变起始色',
+  `bg_to`       VARCHAR(16)  NOT NULL DEFAULT '#0d9488' COMMENT '渐变结束色',
+  `image1`      VARCHAR(500) DEFAULT NULL COMMENT '拼贴图1',
+  `image2`      VARCHAR(500) DEFAULT NULL COMMENT '拼贴图2',
+  `sort`        INT          NOT NULL DEFAULT 0 COMMENT '排序',
+  `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1上架 0下架',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首页轮播图';
+
+-- ---------------------------------------------------------------------
+-- 19. cms_notice 商城公告
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `cms_notice`;
+CREATE TABLE `cms_notice` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `content`     VARCHAR(255) NOT NULL COMMENT '公告内容',
+  `sort`        INT          NOT NULL DEFAULT 0 COMMENT '排序',
+  `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1显示 0隐藏',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商城公告';
+
+-- ---------------------------------------------------------------------
+-- 20. ums_points_log 积分批次账本（12 个月滚动过期，消费按批先进先出）
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `ums_points_log`;
+CREATE TABLE `ums_points_log` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `member_id`   BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
+  `amount`      INT          NOT NULL COMMENT '批次剩余积分（获取为正；流水为变动量）',
+  `type`        TINYINT      NOT NULL DEFAULT 1 COMMENT '类型：1获取批次 2消费流水 3过期流水',
+  `remark`      VARCHAR(255) DEFAULT NULL COMMENT '备注（订单号/兑换说明）',
+  `expire_time` DATETIME     DEFAULT NULL COMMENT '批次过期时间（获取批次专属）',
+  `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '批次状态：0有效 1已过期/已核销',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_member` (`member_id`, `type`, `status`),
+  KEY `idx_expire` (`status`, `expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='积分批次账本';
+
+-- ---------------------------------------------------------------------
+-- 21. sms_flash_sale 限时秒杀（SKU 级秒杀价，下单时服务端强制生效）
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `sms_flash_sale`;
+CREATE TABLE `sms_flash_sale` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `name`        VARCHAR(100) NOT NULL COMMENT '活动名称',
+  `sku_id`      BIGINT UNSIGNED NOT NULL COMMENT '参与秒杀的SKU（唯一）',
+  `flash_price` DECIMAL(10,2) NOT NULL COMMENT '秒杀价',
+  `start_time`  DATETIME     NOT NULL COMMENT '开始时间',
+  `end_time`    DATETIME     NOT NULL COMMENT '结束时间',
+  `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1启用 0停用',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_sku` (`sku_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='限时秒杀';
+
+-- ---------------------------------------------------------------------
+-- 22. sys_admin_log 后台操作审计日志（AOP 自动记录写操作）
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_admin_log`;
+CREATE TABLE `sys_admin_log` (
+  `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `admin_id`       BIGINT UNSIGNED DEFAULT NULL COMMENT '管理员ID',
+  `admin_username` VARCHAR(64)  DEFAULT NULL COMMENT '管理员账号',
+  `module`         VARCHAR(64)  DEFAULT NULL COMMENT '模块（控制器）',
+  `action`         VARCHAR(64)  DEFAULT NULL COMMENT '动作（方法）',
+  `method`         VARCHAR(10)  DEFAULT NULL COMMENT 'HTTP方法',
+  `uri`            VARCHAR(255) DEFAULT NULL COMMENT '请求路径',
+  `params`         VARCHAR(1000) DEFAULT NULL COMMENT '请求参数（敏感字段已脱敏）',
+  `ip`             VARCHAR(64)  DEFAULT NULL COMMENT '来源IP',
+  `status`         TINYINT      NOT NULL DEFAULT 1 COMMENT '结果：1成功 0失败',
+  `error_msg`      VARCHAR(500) DEFAULT NULL COMMENT '失败原因',
+  `cost_ms`        INT          DEFAULT NULL COMMENT '耗时毫秒',
+  `create_time`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_admin` (`admin_id`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台操作审计日志';
+
 -- =====================================================================
 -- 基础数据
 -- =====================================================================
@@ -362,7 +477,8 @@ CREATE TABLE `pms_comment` (
 INSERT INTO `ums_admin` (`id`,`username`,`password`,`nickname`,`email`,`phone`,`status`) VALUES
 (1,'admin','INIT','超级管理员','admin@limemall.com','13800000001',1),
 (2,'yunying','INIT','运营小云','yunying@limemall.com','13800000002',1),
-(3,'kefu','INIT','客服小柠','kefu@limemall.com','13800000003',1);
+(3,'kefu','INIT','客服小柠','kefu@limemall.com','13800000003',1),
+(4,'kefu2','INIT','客服小柚','kefu2@limemall.com','13800000004',1);
 
 -- 角色
 INSERT INTO `ums_role` (`id`,`name`,`description`,`sort`,`status`) VALUES
@@ -371,7 +487,7 @@ INSERT INTO `ums_role` (`id`,`name`,`description`,`sort`,`status`) VALUES
 (3,'客服专员','负责订单处理与退款审核',60,1);
 
 -- 管理员-角色关联
-INSERT INTO `ums_admin_role` (`admin_id`,`role_id`) VALUES (1,1),(2,2),(3,3);
+INSERT INTO `ums_admin_role` (`admin_id`,`role_id`) VALUES (1,1),(2,2),(3,3),(4,3);
 
 -- 菜单权限
 INSERT INTO `ums_menu` (`id`,`parent_id`,`name`,`path`,`icon`,`perm`,`type`,`sort`,`status`) VALUES
@@ -417,20 +533,28 @@ INSERT INTO `ums_menu` (`id`,`parent_id`,`name`,`path`,`icon`,`perm`,`type`,`sor
 (523,52,'分配权限','','','ums:role:assign',2,97,1),
 (524,52,'删除角色','','','ums:role:delete',2,96,1),
 (53,50,'个人中心','/system/profile','','',1,0,1),
-(60,0,'客服聊天','/admin/chat','ChatDotRound','ums:chat:list',1,65,1);
+(60,0,'客服聊天','/admin/chat','ChatDotRound','ums:chat:list',1,65,1),
+(601,60,'回复消息','','','ums:chat:reply',2,99,1),
+(42,40,'内容管理','/marketing/content','Picture','cms:content:list',1,98,1),
+(421,42,'编辑内容','','','cms:content:edit',2,99,1),
+(43,40,'秒杀管理','/marketing/flash','Timer','sms:flash:list',1,97,1),
+(431,43,'编辑秒杀','','','sms:flash:edit',2,99,1),
+(432,43,'删除秒杀','','','sms:flash:delete',2,98,1),
+(54,50,'操作日志','/system/log','Tickets','sys:log:list',1,96,1);
 
 -- 管理端统一路由前缀：前台主站为 /shop，管理端为 /admin/**
 UPDATE `ums_menu` SET `path` = CONCAT('/admin', `path`) WHERE `path` LIKE '/%' AND `path` NOT LIKE '/admin/%';
 
--- 角色-菜单关联：超级管理员拥有全部权限
-INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) SELECT 1, id FROM `ums_menu`;
+-- 角色-菜单关联：超级管理员拥有全部权限（聊天回复除外——监管视角只读，职责分离）
+INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) SELECT 1, id FROM `ums_menu` WHERE `perm` <> 'ums:chat:reply';
 -- 运营专员
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) VALUES
 (2,1),(2,10),(2,11),(2,111),(2,112),(2,113),(2,114),(2,12),(2,121),(2,122),(2,123),(2,13),(2,131),(2,132),(2,133),(2,61),(2,611),
-(2,20),(2,21),(2,211),(2,212),(2,22),(2,221),(2,30),(2,301),(2,40),(2,41),(2,411),(2,412),(2,413),(2,60),(2,53);
+(2,20),(2,21),(2,211),(2,212),(2,22),(2,221),(2,30),(2,301),(2,40),(2,41),(2,411),(2,412),(2,413),(2,60),(2,53),
+(2,42),(2,421),(2,43),(2,431),(2,432);
 -- 客服专员
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) VALUES
-(3,1),(3,20),(3,21),(3,22),(3,221),(3,30),(3,53),(3,60);
+(3,1),(3,20),(3,21),(3,22),(3,221),(3,30),(3,53),(3,60),(3,601);
 
 -- 品牌
 INSERT INTO `pms_brand` (`id`,`name`,`first_letter`,`description`,`sort`,`status`) VALUES
@@ -568,6 +692,14 @@ INSERT INTO `pms_sku` (`product_id`,`sku_code`,`specs`,`price`,`stock`) VALUES
 UPDATE `pms_product` p
 SET p.stock = (SELECT IFNULL(SUM(s.stock),0) FROM `pms_sku` s WHERE s.product_id = p.id);
 
+-- 限时秒杀种子（按 SKU 编码定位，避免依赖自增ID）
+INSERT INTO `sms_flash_sale` (`name`,`sku_id`,`flash_price`,`start_time`,`end_time`,`status`)
+SELECT '今日秒杀 · 云岚降噪耳机', id, 299.00, NOW(), DATE_ADD(NOW(), INTERVAL 3 DAY), 1
+FROM `pms_sku` WHERE `sku_code` = 'SKU-0001-01' LIMIT 1;
+INSERT INTO `sms_flash_sale` (`name`,`sku_id`,`flash_price`,`start_time`,`end_time`,`status`)
+SELECT '今日秒杀 · 拾光墨水屏阅读器', id, 899.00, NOW(), DATE_ADD(NOW(), INTERVAL 3 DAY), 1
+FROM `pms_sku` WHERE `sku_code` = 'SKU-0003-01' LIMIT 1;
+
 -- 会员（密码占位符 INIT，由后端启动时 BCrypt 加密为 123456）
 INSERT INTO `ums_member` (`id`,`username`,`password`,`nickname`,`phone`,`gender`,`birthday`,`level`,`points`,`status`,`register_time`) VALUES
 (1,'m001','INIT','林晚','13800010001',2,'1998-03-12',3,1280,1,DATE_SUB(NOW(), INTERVAL 210 DAY)),
@@ -594,6 +726,17 @@ INSERT INTO `ums_member` (`id`,`username`,`password`,`nickname`,`phone`,`gender`
 -- 成长值按等级基线初始化（成长值只增不减，决定等级）
 UPDATE `ums_member` SET `growth` = CASE `level` WHEN 4 THEN 15000 WHEN 3 THEN 5000 WHEN 2 THEN 1000 ELSE 0 END;
 
+-- 会员积分与等级一致性校准（金卡/钻石会员积分需高于对应门槛）
+UPDATE `ums_member` SET `points` = 2600 WHERE `id` = 1;
+UPDATE `ums_member` SET `points` = 5200 WHERE `id` = 3;
+UPDATE `ums_member` SET `points` = 2350 WHERE `id` = 6;
+UPDATE `ums_member` SET `points` = 2420 WHERE `id` = 10;
+
+-- 历史积分迁移为账本批次（12 个月后过期）
+INSERT INTO `ums_points_log` (`member_id`, `amount`, `type`, `remark`, `expire_time`)
+SELECT `id`, `points`, 1, '历史积分迁移', DATE_ADD(NOW(), INTERVAL 12 MONTH)
+FROM `ums_member` WHERE `points` > 0;
+
 -- 优惠券
 INSERT INTO `sms_coupon` (`id`,`name`,`type`,`amount`,`min_amount`,`total_count`,`receive_count`,`used_count`,`per_limit`,`start_time`,`end_time`,`status`) VALUES
 (1,'新人见面礼 满100减10',1,10.00,100.00,1000,0,0,1,DATE_SUB(NOW(), INTERVAL 30 DAY),DATE_ADD(NOW(), INTERVAL 60 DAY),1),
@@ -610,6 +753,18 @@ UPDATE `sms_coupon` SET `points_price` = 4000 WHERE `id` = 2;
 UPDATE `sms_coupon` SET `points_price` = 8000 WHERE `id` = 4;
 UPDATE `sms_coupon` SET `points_price` = 500  WHERE `id` = 6;
 UPDATE `sms_coupon` SET `points_price` = 300  WHERE `id` = 7;
+
+-- 首页轮播图（后台可配置）
+INSERT INTO `cms_banner` (`tag`,`title`,`subtitle`,`cta_text`,`link_url`,`bg_from`,`bg_to`,`image1`,`image2`,`sort`,`status`) VALUES
+('数码焕新','轻装出行 · 桌面焕新','充电器 / 阅读器 / 键鼠周边，精选好物满 99 包邮','立即选购','/shop/products?categoryId=1','#0b3d33','#0d9488','/img/products/p02.svg','/img/products/p03.svg',100,1),
+('积分商城','积分当钱花','100 积分抵 1 元，全场优惠券持续兑换中','去兑换','/shop/points','#7c2d12','#d97706','/img/products/p18.svg','/img/products/p21.svg',90,1),
+('会员权益','金卡 / 钻石全场免运费','购物累计成长值，等级自动升级，积分加速获取','查看会员权益','/shop/member','#1e1b4b','#6366f1','/img/products/p17.svg','/img/products/p26.svg',80,1);
+
+-- 商城公告
+INSERT INTO `cms_notice` (`content`,`sort`,`status`) VALUES
+('全场满 99 元包邮，金卡及以上会员无门槛免运费',100,1),
+('支持 7 天无理由退款，退款审核 24 小时内处理',90,1),
+('客服在线 9:00 - 21:00，点击右下角悬浮窗咨询',80,1);
 
 SET FOREIGN_KEY_CHECKS = 1;
 

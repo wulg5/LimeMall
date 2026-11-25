@@ -51,6 +51,7 @@ public class ProductService {
     private final PmsBrandMapper brandMapper;
     private final PmsCategoryMapper categoryMapper;
     private final CommentService commentService;
+    private final FlashSaleService flashSaleService;
 
     /**
      * 分页查询商品（管理端，默认排序）。
@@ -98,6 +99,7 @@ public class ProductService {
         Map<Long, String> categoryNames = categoryMapper.selectList(null).stream()
                 .collect(Collectors.toMap(PmsCategory::getId, PmsCategory::getName));
         Map<Long, ProductRatingVO> ratings = commentService.allRatings();
+        Map<Long, BigDecimal> flashPrices = flashSaleService.activeMinPriceByProduct();
 
         List<ProductVO> records = page.getRecords().stream().map(product -> {
             ProductVO vo = new ProductVO();
@@ -109,6 +111,7 @@ public class ProductService {
                 vo.setAvgRating(rating.getAvgRating());
                 vo.setCommentCount(rating.getCommentCount());
             }
+            vo.setFlashPrice(flashPrices.get(product.getId()));
             return vo;
         }).toList();
         return PageResult.of(page, records);
@@ -133,11 +136,36 @@ public class ProductService {
         List<PmsSku> skus = skuMapper.selectList(new LambdaQueryWrapper<PmsSku>()
                 .eq(PmsSku::getProductId, id)
                 .orderByAsc(PmsSku::getId));
+        Map<Long, com.limemall.entity.SmsFlashSale> flashMap = flashSaleService.activeSkuMap(
+                skus.stream().map(PmsSku::getId).toList());
+        skus.forEach(sku -> {
+            com.limemall.entity.SmsFlashSale flash = flashMap.get(sku.getId());
+            if (flash != null) {
+                sku.setFlashPrice(flash.getFlashPrice());
+            }
+        });
         vo.setSkus(skus);
         ProductRatingVO rating = commentService.ratingOf(id);
         vo.setAvgRating(rating.getAvgRating());
         vo.setCommentCount(rating.getCommentCount());
         return vo;
+    }
+
+    /**
+     * 搜索联想：按商品名称模糊匹配（仅上架商品），返回前 6 条。
+     */
+    public List<Map<String, Object>> suggest(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return List.of();
+        }
+        return productMapper.selectList(new LambdaQueryWrapper<PmsProduct>()
+                        .eq(PmsProduct::getPublishStatus, 1)
+                        .like(PmsProduct::getName, keyword)
+                        .orderByDesc(PmsProduct::getSales)
+                        .last("LIMIT 6"))
+                .stream()
+                .map(product -> Map.<String, Object>of("id", product.getId(), "name", product.getName()))
+                .toList();
     }
 
     /**

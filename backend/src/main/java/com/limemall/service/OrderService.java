@@ -15,6 +15,7 @@ import com.limemall.entity.PmsProduct;
 import com.limemall.entity.PmsSku;
 import com.limemall.entity.SmsCoupon;
 import com.limemall.entity.SmsCouponMember;
+import com.limemall.entity.SmsFlashSale;
 import com.limemall.entity.UmsMember;
 import com.limemall.mapper.OmsOrderItemMapper;
 import com.limemall.mapper.OmsOrderMapper;
@@ -82,6 +83,9 @@ public class OrderService {
     private final PmsProductMapper productMapper;
     private final SmsCouponMapper couponMapper;
     private final SmsCouponMemberMapper couponMemberMapper;
+    private final FlashSaleService flashSaleService;
+    private final PointsLedgerService pointsLedgerService;
+    private final AlipayService alipayService;
 
     // ==================================================================
     // 管理员端
@@ -208,6 +212,9 @@ public class OrderService {
             quantities.merge(item.getSkuId(), item.getQuantity(), Integer::sum);
         }
 
+        // 解析生效中的秒杀价（服务端权威价格，覆盖 SKU 常规售价）
+        Map<Long, SmsFlashSale> flashMap = flashSaleService.activeSkuMap(quantities.keySet());
+
         List<OmsOrderItem> items = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
@@ -232,15 +239,18 @@ public class OrderService {
                     .setSql("stock = GREATEST(stock - " + quantity + ", 0)")
                     .eq(PmsProduct::getId, product.getId()));
 
+            BigDecimal unitPrice = flashMap.containsKey(sku.getId())
+                    ? flashMap.get(sku.getId()).getFlashPrice()
+                    : sku.getPrice();
             OmsOrderItem item = new OmsOrderItem();
             item.setProductId(product.getId());
             item.setProductName(product.getName());
             item.setProductPic(product.getMainPic());
             item.setSkuId(sku.getId());
             item.setSkuSpecs(sku.getSpecs());
-            item.setPrice(sku.getPrice());
+            item.setPrice(unitPrice);
             item.setQuantity(quantity);
-            item.setItemAmount(sku.getPrice().multiply(BigDecimal.valueOf(quantity))
+            item.setItemAmount(unitPrice.multiply(BigDecimal.valueOf(quantity))
                     .setScale(2, RoundingMode.HALF_UP));
             items.add(item);
             totalAmount = totalAmount.add(item.getItemAmount());
@@ -320,26 +330,59 @@ public class OrderService {
     }
 
     /**
-     * 模拟支付：待付款 → 待发货，累计商品销量，并按消费金额累计会员积分、
-     * 达阈值自动升级（1 元 = 1 积分 × 等级倍率）。
+     * 发起支付：
+     * - 已配置支付宝（沙箱）密钥时，返回收银台跳转 URL，等待异步通知入账；
+     * - 未配置时走模拟支付，直接入账（本地演示默认路径）。
      */
     @Transactional
-    public void pay(Long memberId, Long id) {
+    public Map<String, Object> pay(Long memberId, Long id) {
         OmsOrder order = getMemberOrder(memberId, id);
         if (order.getStatus() != STATUS_UNPAID) {
             throw new BusinessException("当前订单状态不可支付");
         }
-        // 条件更新：仅当仍为待付款时生效，防止并发重复支付
+        if (alipayService.isEnabled()) {
+            return Map.of("payUrl", alipayService.buildPagePayUrl(order), "simulated", false);
+        }
+        if (!markPaid(order)) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
+        return Map.of("simulated", true);
+    }
+
+    /**
+     * 支付入账（支付宝异步通知调用）：以订单号定位，金额校验 + 幂等。
+     */
+    @Transactional
+    public void payByOrderSn(String orderSn, BigDecimal paidAmount) {
+        OmsOrder order = orderMapper.selectOne(new LambdaQueryWrapper<OmsOrder>()
+                .eq(OmsOrder::getOrderSn, orderSn));
+        if (order == null) {
+            throw new BusinessException("订单不存在：" + orderSn);
+        }
+        if (order.getStatus() != STATUS_UNPAID) {
+            return; // 已处理过（幂等）
+        }
+        if (paidAmount == null || paidAmount.compareTo(order.getPayAmount()) != 0) {
+            throw new BusinessException("支付金额与订单金额不符");
+        }
+        markPaid(order);
+    }
+
+    /**
+     * 标记订单已支付：条件更新（防并发重复入账）→ 累计销量 → 会员成长值与积分批次入账。
+     * 返回 false 表示订单已被其他请求处理（CAS 抢占失败）。
+     */
+    private boolean markPaid(OmsOrder order) {
         int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
                 .set(OmsOrder::getStatus, STATUS_UNSHIPPED)
                 .set(OmsOrder::getPayTime, LocalDateTime.now())
-                .eq(OmsOrder::getId, id)
+                .eq(OmsOrder::getId, order.getId())
                 .eq(OmsOrder::getStatus, STATUS_UNPAID));
         if (affected == 0) {
-            throw new BusinessException("订单状态已变更，请刷新后重试");
+            return false;
         }
         // 支付成功累计销量
-        for (OmsOrderItem item : listItems(id)) {
+        for (OmsOrderItem item : listItems(order.getId())) {
             skuMapper.update(null, new LambdaUpdateWrapper<PmsSku>()
                     .setSql("sales = sales + " + item.getQuantity())
                     .eq(PmsSku::getId, item.getSkuId()));
@@ -349,8 +392,9 @@ public class OrderService {
         }
         // 会员成长（双账户模型）：
         // 成长值 += 实付金额（只增不减，决定等级——积分消费不会掉级）；
-        // 积分 += 实付金额 × 等级倍率（站内货币，可在积分商城兑换优惠券）。
-        UmsMember member = memberMapper.selectById(memberId);
+        // 积分 += 实付金额 × 等级倍率（站内货币，可在积分商城兑换优惠券）；
+        // 同时写入积分批次账本（12 个月滚动过期）。
+        UmsMember member = memberMapper.selectById(order.getMemberId());
         if (member != null) {
             int payYuan = order.getPayAmount().intValue();
             int currentGrowth = member.getGrowth() == null ? 0 : member.getGrowth();
@@ -358,12 +402,15 @@ public class OrderService {
             int earnedPoints = (int) ((long) payYuan * MemberLevels.pointPercent(member.getLevel()) / 100);
             int newGrowth = currentGrowth + payYuan;
             UmsMember memberUpdate = new UmsMember();
-            memberUpdate.setId(memberId);
+            memberUpdate.setId(member.getId());
             memberUpdate.setPoints(currentPoints + earnedPoints);
             memberUpdate.setGrowth(newGrowth);
             memberUpdate.setLevel(MemberLevels.resolveLevel(newGrowth));
             memberMapper.updateById(memberUpdate);
+            pointsLedgerService.earn(member.getId(), earnedPoints,
+                    "订单 " + order.getOrderSn() + " 消费积分");
         }
+        return true;
     }
 
     /**

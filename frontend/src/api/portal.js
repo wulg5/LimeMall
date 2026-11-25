@@ -32,6 +32,25 @@ export function getProductDetail(id) {
   return request.get(`/portal/public/products/${id}`)
 }
 
+/** 搜索联想 */
+export function searchSuggest(keyword) {
+  return request.get('/portal/public/search/suggest', { params: { keyword } })
+}
+
+/* ---------------- 内容（轮播/公告/秒杀） ---------------- */
+
+export function getBanners() {
+  return request.get('/portal/public/banners')
+}
+
+export function getNotices() {
+  return request.get('/portal/public/notices')
+}
+
+export function getFlashSales() {
+  return request.get('/portal/public/flash-sales')
+}
+
 /* ---------------- 优惠券 ---------------- */
 
 export function getAvailableCoupons() {
@@ -100,8 +119,8 @@ export function refundOrder(id, data) {
 
 /* ---------------- 客服聊天 ---------------- */
 
-export function getChatMessages() {
-  return request.get('/portal/chat/messages')
+export function getChatCurrent() {
+  return request.get('/portal/chat/current')
 }
 
 export function sendChatMessage(content) {

@@ -12,7 +12,7 @@
         <div class="chat-header">
           <div>
             <div class="chat-title">在线客服</div>
-            <div class="chat-sub">通常几分钟内回复</div>
+            <div class="chat-sub">{{ agentSubTitle }}</div>
           </div>
           <el-icon class="close-btn" @click="visible = false"><Close /></el-icon>
         </div>
@@ -46,10 +46,10 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Close, Service } from '@element-plus/icons-vue'
-import { getChatMessages, sendChatMessage } from '@/api/portal'
+import { getChatCurrent, sendChatMessage } from '@/api/portal'
 import { useShopStore } from '@/stores/shop'
 
 const route = useRoute()
@@ -58,10 +58,20 @@ const shopStore = useShopStore()
 
 const visible = ref(false)
 const messages = ref([])
+const session = ref(null)
 const draft = ref('')
 const sending = ref(false)
 const listRef = ref()
 let pollTimer = null
+
+/** 头部副标题：展示当前接待客服（一对一分派后由后端返回） */
+const agentSubTitle = computed(() => {
+  if (!shopStore.token) return '登录后即可咨询'
+  if (!session.value) return '发送消息后为您分配客服'
+  if (session.value.status === 1) return '会话已结束，发送消息将开启新咨询'
+  if (session.value.agentNickname) return `客服 ${session.value.agentNickname} 为您服务`
+  return '等待客服接入...'
+})
 
 function togglePanel() {
   if (!visible.value && !shopStore.token) {
@@ -84,7 +94,9 @@ function goLogin() {
 async function loadMessages() {
   if (!shopStore.token) return
   try {
-    messages.value = await getChatMessages()
+    const data = await getChatCurrent()
+    session.value = data.session || null
+    messages.value = data.messages || []
     await nextTick()
     if (listRef.value) {
       listRef.value.scrollTop = listRef.value.scrollHeight

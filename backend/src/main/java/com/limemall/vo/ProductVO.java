@@ -48,6 +48,9 @@ public class ProductVO {
     /** 评价数量 */
     private Long commentCount;
 
+    /** 生效中的秒杀最低价（无秒杀时为空） */
+    private java.math.BigDecimal flashPrice;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

@@ -167,8 +167,13 @@ function openDetail(order) {
 
 async function handlePay(order) {
   try {
-    await ElMessageBox.confirm(`模拟支付 ${money(order.payAmount)} 吗？`, '订单支付', { type: 'info' })
-    await payOrder(order.id)
+    await ElMessageBox.confirm(`确认支付 ${money(order.payAmount)} 吗？`, '订单支付', { type: 'info' })
+    const result = await payOrder(order.id)
+    if (result && result.payUrl) {
+      ElMessage.success('正在跳转支付宝收银台...')
+      window.location.href = result.payUrl
+      return
+    }
     ElMessage.success('支付成功，等待商家发货')
     load()
   } catch (e) {

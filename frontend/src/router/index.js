@@ -61,8 +61,11 @@ const routes = [
       { path: 'chat', component: () => import('@/views/chat/ChatWorkbench.vue'), meta: { title: '客服聊天' } },
       { path: 'member/list', component: () => import('@/views/member/list.vue'), meta: { title: '会员管理' } },
       { path: 'marketing/coupon', component: () => import('@/views/marketing/coupon.vue'), meta: { title: '优惠券管理' } },
+      { path: 'marketing/content', component: () => import('@/views/marketing/content.vue'), meta: { title: '内容管理' } },
+      { path: 'marketing/flash', component: () => import('@/views/marketing/flash.vue'), meta: { title: '秒杀管理' } },
       { path: 'system/admin', component: () => import('@/views/system/admin.vue'), meta: { title: '管理员管理' } },
       { path: 'system/role', component: () => import('@/views/system/role.vue'), meta: { title: '角色管理' } },
+      { path: 'system/log', component: () => import('@/views/system/log.vue'), meta: { title: '操作日志' } },
       { path: 'system/profile', component: () => import('@/views/system/profile.vue'), meta: { title: '个人中心' } }
     ]
   },

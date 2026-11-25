@@ -13,6 +13,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
+import java.util.Map;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,10 +57,9 @@ public class PortalOrderController {
     }
 
     @PostMapping("/{id}/pay")
-    @Operation(summary = "模拟支付")
-    public Result<Void> pay(@PathVariable Long id) {
-        orderService.pay(SecurityUtils.getMemberId(), id);
-        return Result.ok();
+    @Operation(summary = "发起支付（沙箱返回 payUrl；未配置时模拟支付直接成功）")
+    public Result<Map<String, Object>> pay(@PathVariable Long id) {
+        return Result.ok(orderService.pay(SecurityUtils.getMemberId(), id));
     }
 
     @PostMapping("/{id}/cancel")

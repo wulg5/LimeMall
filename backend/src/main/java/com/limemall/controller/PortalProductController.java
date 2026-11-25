@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商城前台公开接口：首页、分类、商品浏览（无需登录）。
@@ -75,5 +76,11 @@ public class PortalProductController {
                                                         @RequestParam(defaultValue = "1") long pageNum,
                                                         @RequestParam(defaultValue = "10") long pageSize) {
         return Result.ok(commentService.productComments(id, pageNum, pageSize));
+    }
+
+    @GetMapping("/search/suggest")
+    @Operation(summary = "搜索联想（上架商品名，最多 6 条）")
+    public Result<List<Map<String, Object>>> suggest(@RequestParam String keyword) {
+        return Result.ok(productService.suggest(keyword));
     }
 }
