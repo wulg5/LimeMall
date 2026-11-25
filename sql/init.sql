@@ -100,7 +100,8 @@ CREATE TABLE `ums_member` (
   `gender`        TINYINT      NOT NULL DEFAULT 0 COMMENT '性别：0未知 1男 2女',
   `birthday`      DATE         DEFAULT NULL COMMENT '生日',
   `level`         TINYINT      NOT NULL DEFAULT 1 COMMENT '会员等级：1普通 2银卡 3金卡 4钻石',
-  `points`        INT          NOT NULL DEFAULT 0 COMMENT '积分',
+  `points`        INT          NOT NULL DEFAULT 0 COMMENT '积分（站内货币，可兑换优惠券）',
+  `growth`        INT          NOT NULL DEFAULT 0 COMMENT '成长值（只增不减，决定会员等级）',
   `status`        TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1正常 0禁用',
   `register_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '注册时间',
   `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -291,6 +292,7 @@ CREATE TABLE `sms_coupon` (
   `start_time`    DATETIME     NOT NULL COMMENT '有效期开始',
   `end_time`      DATETIME     NOT NULL COMMENT '有效期结束',
   `status`        TINYINT      NOT NULL DEFAULT 0 COMMENT '状态：1进行中 0已停止',
+  `points_price`  INT          NOT NULL DEFAULT 0 COMMENT '积分兑换价（0=不参与积分兑换；100积分=1元面额）',
   `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`)
@@ -331,6 +333,27 @@ CREATE TABLE `ums_chat_message` (
   KEY `idx_member_read` (`member_id`, `from_type`, `is_read`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服聊天消息表';
 
+-- ---------------------------------------------------------------------
+-- 17. pms_comment 商品评价表
+--     唯一约束 (order_id, product_id)：同一订单同一商品仅可评价一次
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS `pms_comment`;
+CREATE TABLE `pms_comment` (
+  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `product_id`      BIGINT UNSIGNED NOT NULL COMMENT '商品ID',
+  `order_id`        BIGINT UNSIGNED NOT NULL COMMENT '订单ID（评价资格来源）',
+  `member_id`       BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
+  `member_nickname` VARCHAR(64) DEFAULT NULL COMMENT '会员昵称（快照）',
+  `member_level`    TINYINT NOT NULL DEFAULT 1 COMMENT '会员等级（快照）',
+  `rating`          TINYINT NOT NULL COMMENT '评分 1-5',
+  `content`         VARCHAR(500) NOT NULL COMMENT '评价内容（纯文本）',
+  `create_time`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '评价时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_product` (`order_id`, `product_id`),
+  KEY `idx_product` (`product_id`),
+  KEY `idx_member` (`member_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品评价表';
+
 -- =====================================================================
 -- 基础数据
 -- =====================================================================
@@ -367,6 +390,8 @@ INSERT INTO `ums_menu` (`id`,`parent_id`,`name`,`path`,`icon`,`perm`,`type`,`sor
 (131,13,'新增分类','','','pms:category:create',2,99,1),
 (132,13,'编辑分类','','','pms:category:update',2,98,1),
 (133,13,'删除分类','','','pms:category:delete',2,97,1),
+(61,10,'评价管理','/product/comment','ChatLineSquare','pms:comment:list',1,96,1),
+(611,61,'删除评价','','','pms:comment:delete',2,99,1),
 (20,0,'订单管理','/order','List','',0,80,1),
 (21,20,'订单列表','/order/list','','oms:order:list',1,99,1),
 (211,21,'订单发货','','','oms:order:deliver',2,99,1),
@@ -401,7 +426,7 @@ UPDATE `ums_menu` SET `path` = CONCAT('/admin', `path`) WHERE `path` LIKE '/%' A
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) SELECT 1, id FROM `ums_menu`;
 -- 运营专员
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) VALUES
-(2,1),(2,10),(2,11),(2,111),(2,112),(2,113),(2,114),(2,12),(2,121),(2,122),(2,123),(2,13),(2,131),(2,132),(2,133),
+(2,1),(2,10),(2,11),(2,111),(2,112),(2,113),(2,114),(2,12),(2,121),(2,122),(2,123),(2,13),(2,131),(2,132),(2,133),(2,61),(2,611),
 (2,20),(2,21),(2,211),(2,212),(2,22),(2,221),(2,30),(2,301),(2,40),(2,41),(2,411),(2,412),(2,413),(2,60),(2,53);
 -- 客服专员
 INSERT INTO `ums_role_menu` (`role_id`,`menu_id`) VALUES
@@ -566,13 +591,25 @@ INSERT INTO `ums_member` (`id`,`username`,`password`,`nickname`,`phone`,`gender`
 (19,'m019','INIT','傅斯','13800010019',1,'1994-10-26',2,540,1,DATE_SUB(NOW(), INTERVAL 13 DAY)),
 (20,'m020','INIT','洛栖','13800010020',2,'2000-04-03',1,60,1,DATE_SUB(NOW(), INTERVAL 5 DAY));
 
+-- 成长值按等级基线初始化（成长值只增不减，决定等级）
+UPDATE `ums_member` SET `growth` = CASE `level` WHEN 4 THEN 15000 WHEN 3 THEN 5000 WHEN 2 THEN 1000 ELSE 0 END;
+
 -- 优惠券
 INSERT INTO `sms_coupon` (`id`,`name`,`type`,`amount`,`min_amount`,`total_count`,`receive_count`,`used_count`,`per_limit`,`start_time`,`end_time`,`status`) VALUES
 (1,'新人见面礼 满100减10',1,10.00,100.00,1000,0,0,1,DATE_SUB(NOW(), INTERVAL 30 DAY),DATE_ADD(NOW(), INTERVAL 60 DAY),1),
 (2,'会员专享 满300减40',1,40.00,300.00,500,0,0,1,DATE_SUB(NOW(), INTERVAL 15 DAY),DATE_ADD(NOW(), INTERVAL 45 DAY),1),
 (3,'全场 95 折券',2,9.50,0.00,300,0,0,1,DATE_SUB(NOW(), INTERVAL 10 DAY),DATE_ADD(NOW(), INTERVAL 30 DAY),1),
 (4,'大额满减 满500减80',1,80.00,500.00,200,0,0,2,DATE_SUB(NOW(), INTERVAL 5 DAY),DATE_ADD(NOW(), INTERVAL 25 DAY),1),
-(5,'春日限定 满200减30（已结束）',1,30.00,200.00,100,0,0,1,DATE_SUB(NOW(), INTERVAL 60 DAY),DATE_SUB(NOW(), INTERVAL 20 DAY),0);
+(5,'春日限定 满200减30（已结束）',1,30.00,200.00,100,0,0,1,DATE_SUB(NOW(), INTERVAL 60 DAY),DATE_SUB(NOW(), INTERVAL 20 DAY),0),
+(6,'积分兑 满50减5',1,5.00,50.00,10000,0,0,5,DATE_SUB(NOW(), INTERVAL 1 DAY),DATE_ADD(NOW(), INTERVAL 180 DAY),1),
+(7,'积分兑 无门槛减3',1,3.00,0.00,10000,0,0,10,DATE_SUB(NOW(), INTERVAL 1 DAY),DATE_ADD(NOW(), INTERVAL 180 DAY),1);
+
+-- 积分兑换价（100 积分 = 1 元面额；0 表示不参与积分兑换）
+UPDATE `sms_coupon` SET `points_price` = 1000 WHERE `id` = 1;
+UPDATE `sms_coupon` SET `points_price` = 4000 WHERE `id` = 2;
+UPDATE `sms_coupon` SET `points_price` = 8000 WHERE `id` = 4;
+UPDATE `sms_coupon` SET `points_price` = 500  WHERE `id` = 6;
+UPDATE `sms_coupon` SET `points_price` = 300  WHERE `id` = 7;
 
 SET FOREIGN_KEY_CHECKS = 1;
 

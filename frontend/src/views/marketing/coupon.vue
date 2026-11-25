@@ -49,6 +49,12 @@
           <template #default="{ row }">{{ row.receiveCount }} / {{ row.totalCount }}</template>
         </el-table-column>
         <el-table-column prop="usedCount" label="已使用" width="90" />
+        <el-table-column label="积分价" width="100">
+          <template #default="{ row }">
+            <span v-if="row.pointsPrice > 0" class="points-price">{{ row.pointsPrice }} 分</span>
+            <span v-else class="time-range">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="有效期" min-width="200">
           <template #default="{ row }">
             <div class="time-range">{{ row.startTime }}</div>
@@ -104,6 +110,10 @@
         </el-form-item>
         <el-form-item label="每人限领" prop="perLimit">
           <el-input-number v-model="form.perLimit" :min="1" style="width: 180px" />
+        </el-form-item>
+        <el-form-item label="积分兑换价">
+          <el-input-number v-model="form.pointsPrice" :min="0" :step="100" style="width: 180px" />
+          <span class="form-tip">0 表示不参与积分兑换（建议按 100 积分 = 1 元面额设置）</span>
         </el-form-item>
         <el-form-item label="有效期" prop="timeRange">
           <el-date-picker v-model="form.timeRange" type="datetimerange" range-separator="至"
@@ -166,6 +176,7 @@ const form = reactive({
   minAmount: 0,
   totalCount: 100,
   perLimit: 1,
+  pointsPrice: 0,
   timeRange: []
 })
 
@@ -226,6 +237,7 @@ function openDialog(row) {
         minAmount: Number(row.minAmount),
         totalCount: row.totalCount,
         perLimit: row.perLimit,
+        pointsPrice: row.pointsPrice || 0,
         timeRange: [row.startTime, row.endTime]
       }
     : {
@@ -236,6 +248,7 @@ function openDialog(row) {
         minAmount: 0,
         totalCount: 100,
         perLimit: 1,
+        pointsPrice: 0,
         timeRange: []
       })
   dialogVisible.value = true
@@ -253,6 +266,7 @@ async function handleSave() {
       minAmount: form.minAmount,
       totalCount: form.totalCount,
       perLimit: form.perLimit,
+      pointsPrice: form.pointsPrice || 0,
       startTime: form.timeRange[0],
       endTime: form.timeRange[1]
     }
@@ -310,5 +324,11 @@ async function loadRecords() {
   margin-left: 10px;
   font-size: 12px;
   color: #9ca3af;
+}
+
+.points-price {
+  color: #d97706;
+  font-weight: 600;
+  font-size: 12.5px;
 }
 </style>

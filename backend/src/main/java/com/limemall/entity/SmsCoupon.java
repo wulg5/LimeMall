@@ -53,6 +53,9 @@ public class SmsCoupon {
     /** 状态：1进行中 0已停止 */
     private Integer status;
 
+    /** 积分兑换价（0=不参与积分兑换；100 积分 = 1 元面额） */
+    private Integer pointsPrice;
+
     /** 创建时间 */
     private LocalDateTime createTime;
 

@@ -42,6 +42,12 @@ public class ProductVO {
     /** 上架状态：1上架 0下架 */
     private Integer publishStatus;
 
+    /** 平均评分（一位小数，无评价时为空） */
+    private java.math.BigDecimal avgRating;
+
+    /** 评价数量 */
+    private Long commentCount;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

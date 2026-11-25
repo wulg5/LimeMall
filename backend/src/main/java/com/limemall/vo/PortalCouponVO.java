@@ -31,4 +31,7 @@ public class PortalCouponVO {
 
     /** 当前会员是否已领取 */
     private Boolean received;
+
+    /** 积分兑换价（0=不可兑换；100 积分 = 1 元面额） */
+    private Integer pointsPrice;
 }

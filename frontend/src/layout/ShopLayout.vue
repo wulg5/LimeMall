@@ -12,6 +12,7 @@
           <router-link to="/shop" exact-active-class="active">首页</router-link>
           <router-link to="/shop/products" active-class="active">全部商品</router-link>
           <router-link to="/shop/coupons" active-class="active">领券中心</router-link>
+          <router-link to="/shop/points" active-class="active">积分商城</router-link>
           <router-link to="/shop/orders" active-class="active">我的订单</router-link>
           <router-link v-if="shopStore.token" to="/shop/member" active-class="active">会员中心</router-link>
         </nav>
@@ -34,6 +35,7 @@
             <span class="user-chip">
               <el-avatar :size="30" :src="shopStore.info?.avatar || '/img/avatar.svg'" />
               <span>{{ shopStore.info?.nickname || '会员' }}</span>
+              <level-badge :level="shopStore.info?.level || 1" />
               <el-icon><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
@@ -82,6 +84,7 @@ import { useShopStore } from '@/stores/shop'
 import { useCartStore } from '@/stores/cart'
 import { MEMBER_LEVEL } from '@/utils/format'
 import ShopChatWidget from '@/components/ShopChatWidget.vue'
+import LevelBadge from '@/components/LevelBadge.vue'
 
 const route = useRoute()
 const router = useRouter()

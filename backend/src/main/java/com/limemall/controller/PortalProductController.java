@@ -2,12 +2,14 @@ package com.limemall.controller;
 
 import com.limemall.common.PageResult;
 import com.limemall.common.Result;
+import com.limemall.service.CommentService;
 import com.limemall.service.PortalService;
 import com.limemall.service.ProductService;
 import com.limemall.vo.CategoryNodeVO;
 import com.limemall.vo.PortalHomeVO;
 import com.limemall.vo.ProductDetailVO;
 import com.limemall.vo.ProductVO;
+import com.limemall.vo.PublicCommentVO;
 import com.limemall.service.CategoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +34,7 @@ public class PortalProductController {
     private final PortalService portalService;
     private final ProductService productService;
     private final CategoryService categoryService;
+    private final CommentService commentService;
 
     @GetMapping("/home")
     @Operation(summary = "首页数据（分类树 + 热销 + 新品）")
@@ -46,13 +49,14 @@ public class PortalProductController {
     }
 
     @GetMapping("/products")
-    @Operation(summary = "商品分页（仅上架商品）")
+    @Operation(summary = "商品分页（仅上架商品，支持排序）")
     public Result<PageResult<ProductVO>> products(@RequestParam(defaultValue = "1") long pageNum,
                                                   @RequestParam(defaultValue = "12") long pageSize,
                                                   @RequestParam(required = false) String name,
                                                   @RequestParam(required = false) Long categoryId,
-                                                  @RequestParam(required = false) Long brandId) {
-        return Result.ok(productService.page(pageNum, pageSize, name, categoryId, brandId, 1));
+                                                  @RequestParam(required = false) Long brandId,
+                                                  @RequestParam(required = false) String sort) {
+        return Result.ok(productService.page(pageNum, pageSize, name, categoryId, brandId, 1, sort));
     }
 
     @GetMapping("/products/{id}")
@@ -63,5 +67,13 @@ public class PortalProductController {
             throw new com.limemall.common.BusinessException("商品已下架");
         }
         return Result.ok(detail);
+    }
+
+    @GetMapping("/products/{id}/comments")
+    @Operation(summary = "商品评价分页（公开）")
+    public Result<PageResult<PublicCommentVO>> comments(@PathVariable Long id,
+                                                        @RequestParam(defaultValue = "1") long pageNum,
+                                                        @RequestParam(defaultValue = "10") long pageSize) {
+        return Result.ok(commentService.productComments(id, pageNum, pageSize));
     }
 }

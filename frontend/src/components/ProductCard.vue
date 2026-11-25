@@ -3,10 +3,19 @@
     <div class="pic-wrap">
       <img :src="product.mainPic || '/img/logo.svg'" :alt="product.name" loading="lazy" />
       <span v-if="discount > 0" class="discount-tag">立省 {{ discount }} 元</span>
+      <button class="quick-add" title="加入购物车" :disabled="adding" @click.stop="quickAdd">
+        <el-icon><ShoppingCart /></el-icon>
+        <span>{{ adding ? '添加中' : '加入购物车' }}</span>
+      </button>
     </div>
     <div class="info">
       <div class="name">{{ product.name }}</div>
       <div class="sub">{{ product.subTitle }}</div>
+      <div class="rating" v-if="product.commentCount > 0">
+        <span class="stars">★★★★★</span>
+        <b>{{ Number(product.avgRating).toFixed(1) }}</b>
+        <span class="count">{{ product.commentCount }} 条评价</span>
+      </div>
       <div class="bottom">
         <div class="price">
           <b>{{ money(product.price) }}</b>
@@ -21,33 +30,67 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { money } from '@/utils/format'
+import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { ShoppingCart } from '@element-plus/icons-vue'
+import { getProductDetail } from '@/api/portal'
+import { useCartStore } from '@/stores/cart'
+import { money, specsToText } from '@/utils/format'
 
 const props = defineProps({
   product: { type: Object, required: true }
 })
+
+const cartStore = useCartStore()
+const adding = ref(false)
 
 const discount = computed(() => {
   const original = Number(props.product.originalPrice || 0)
   const price = Number(props.product.price || 0)
   return original > price ? (original - price).toFixed(0) : 0
 })
+
+/** 快捷加购：取第一个有库存的 SKU 加入购物车 */
+async function quickAdd() {
+  adding.value = true
+  try {
+    const detail = await getProductDetail(props.product.id)
+    const sku = (detail.skus || []).find((item) => item.stock > 0)
+    if (!sku) {
+      ElMessage.warning('该商品暂时缺货')
+      return
+    }
+    cartStore.add({
+      skuId: sku.id,
+      productId: detail.id,
+      name: detail.name,
+      pic: sku.pic || detail.mainPic,
+      specs: specsToText(sku.specs),
+      price: Number(sku.price),
+      stock: sku.stock,
+      quantity: 1
+    })
+    ElMessage.success('已加入购物车')
+  } finally {
+    adding.value = false
+  }
+}
 </script>
 
 <style scoped>
 .product-card {
   background: #ffffff;
-  border-radius: 14px;
+  border: 1px solid #eef2f0;
+  border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.25s;
-  box-shadow: 0 1px 3px rgba(15, 46, 36, 0.05);
+  transition: all 0.22s;
 }
 
 .product-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.15);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(15, 46, 36, 0.1);
+  border-color: var(--el-color-primary-light-5);
 }
 
 .pic-wrap {
@@ -64,18 +107,49 @@ const discount = computed(() => {
 }
 
 .product-card:hover .pic-wrap img {
-  transform: scale(1.05);
+  transform: scale(1.04);
 }
 
 .discount-tag {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: rgba(220, 38, 38, 0.9);
+  background: rgba(220, 38, 38, 0.92);
   color: #ffffff;
   font-size: 12px;
   padding: 3px 8px;
   border-radius: 8px;
+}
+
+.quick-add {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--el-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: all 0.22s;
+  box-shadow: 0 4px 12px rgba(15, 46, 36, 0.16);
+}
+
+.product-card:hover .quick-add {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.quick-add:hover {
+  background: var(--el-color-primary);
+  color: #ffffff;
 }
 
 .info {
@@ -100,11 +174,33 @@ const discount = computed(() => {
   white-space: nowrap;
 }
 
+.rating {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.stars {
+  color: #f59e0b;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.rating b {
+  color: #d97706;
+}
+
+.rating .count {
+  color: #9ca3af;
+}
+
 .bottom {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .price b {
@@ -113,7 +209,7 @@ const discount = computed(() => {
 }
 
 .price del {
-  color: #9ca3af;
+  color: #c3ccc8;
   font-size: 12px;
   margin-left: 6px;
 }

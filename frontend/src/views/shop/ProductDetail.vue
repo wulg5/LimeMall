@@ -21,6 +21,11 @@
       <!-- 右侧信息 -->
       <div class="info">
         <h1>{{ detail.name }}</h1>
+        <div v-if="detail.commentCount > 0" class="rating-line">
+          <el-rate :model-value="Number(detail.avgRating)" disabled allow-half size="small" />
+          <b>{{ Number(detail.avgRating).toFixed(1) }}</b>
+          <span class="rating-count">{{ detail.commentCount }} 条评价</span>
+        </div>
         <p class="sub-title">{{ detail.subTitle }}</p>
 
         <div class="price-bar">
@@ -73,6 +78,34 @@
       <h2>商品详情</h2>
       <div class="detail-html" v-html="detail.detailHtml || '<p>暂无详情</p>'"></div>
     </div>
+
+    <!-- 商品评价 -->
+    <div class="detail-html-card">
+      <div class="comments-head">
+        <h2>商品评价（{{ detail.commentCount || 0 }}）</h2>
+        <span v-if="detail.commentCount > 0" class="comments-score">
+          综合评分 <b>{{ Number(detail.avgRating).toFixed(1) }}</b>
+        </span>
+      </div>
+      <template v-if="comments.length">
+        <div v-for="comment in comments" :key="comment.id" class="comment-item">
+          <div class="c-head">
+            <el-avatar :size="26" src="/img/avatar.svg" />
+            <span class="c-name">{{ comment.memberNickname }}</span>
+            <level-badge :level="comment.memberLevel" />
+            <el-rate :model-value="comment.rating" disabled size="small" class="c-rate" />
+            <span class="c-time">{{ comment.createTime }}</span>
+          </div>
+          <p class="c-content">{{ comment.content }}</p>
+        </div>
+        <div v-if="commentTotal > commentPageSize" class="comments-pager">
+          <el-pagination background small layout="prev, pager, next" :total="commentTotal"
+                         v-model:current-page="commentPage" :page-size="commentPageSize"
+                         @current-change="loadComments" />
+        </div>
+      </template>
+      <el-empty v-else description="暂无评价，购买并确认收货后可发表评价" :image-size="80" />
+    </div>
   </div>
 </template>
 
@@ -81,9 +114,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ShoppingCart } from '@element-plus/icons-vue'
-import { getProductDetail } from '@/api/portal'
+import { getProductComments, getProductDetail } from '@/api/portal'
 import { useCartStore } from '@/stores/cart'
 import { money, specsToText } from '@/utils/format'
+import LevelBadge from '@/components/LevelBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,6 +127,11 @@ const detail = ref(null)
 const selectedSkuId = ref(null)
 const quantity = ref(1)
 const currentPic = ref('')
+
+const comments = ref([])
+const commentTotal = ref(0)
+const commentPage = ref(1)
+const commentPageSize = 5
 
 const album = computed(() => {
   const raw = detail.value?.album || ''
@@ -114,7 +153,17 @@ onMounted(async () => {
   const skus = detail.value.skus || []
   const first = skus.find((sku) => sku.stock > 0) || skus[0]
   selectedSkuId.value = first ? first.id : null
+  loadComments()
 })
+
+async function loadComments() {
+  const data = await getProductComments(route.params.id, {
+    pageNum: commentPage.value,
+    pageSize: commentPageSize
+  })
+  comments.value = data.records
+  commentTotal.value = data.total
+}
 
 function selectSku(sku) {
   selectedSkuId.value = sku.id
@@ -327,6 +376,88 @@ function addToCart(buyNow) {
 .detail-html {
   color: #374151;
   line-height: 1.9;
+}
+
+.rating-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.rating-line b {
+  color: #d97706;
+}
+
+.rating-count {
+  color: #9ca3af;
+}
+
+.comments-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.comments-head h2 {
+  margin: 0;
+}
+
+.comments-score {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.comments-score b {
+  color: #d97706;
+  font-size: 16px;
+}
+
+.comment-item {
+  padding: 14px 0;
+  border-bottom: 1px solid #f5f8f6;
+}
+
+.comment-item:last-of-type {
+  border-bottom: none;
+}
+
+.c-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.c-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.c-rate {
+  margin-left: 4px;
+}
+
+.c-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: #b6c0bb;
+}
+
+.c-content {
+  margin: 8px 0 0 34px;
+  font-size: 13.5px;
+  color: #4b5563;
+  line-height: 1.8;
+}
+
+.comments-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 @media (max-width: 900px) {

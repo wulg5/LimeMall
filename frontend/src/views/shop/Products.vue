@@ -13,6 +13,13 @@
         </el-option-group>
       </el-select>
 
+      <el-select v-model="sort" style="width: 140px" @change="handleSearch">
+        <el-option label="综合排序" value="" />
+        <el-option label="销量优先" value="sales" />
+        <el-option label="价格从低到高" value="priceAsc" />
+        <el-option label="价格从高到低" value="priceDesc" />
+      </el-select>
+
       <el-button type="primary" @click="handleSearch">搜索</el-button>
     </div>
 
@@ -39,6 +46,7 @@ const route = useRoute()
 
 const keyword = ref(route.query.name || '')
 const categoryId = ref(route.query.categoryId ? Number(route.query.categoryId) : null)
+const sort = ref(route.query.sort || '')
 const categories = ref([])
 const list = ref([])
 const total = ref(0)
@@ -55,7 +63,8 @@ async function load() {
     pageNum: pageNum.value,
     pageSize: pageSize.value,
     name: keyword.value || undefined,
-    categoryId: categoryId.value || undefined
+    categoryId: categoryId.value || undefined,
+    sort: sort.value || undefined
   })
   list.value = data.records
   total.value = data.total

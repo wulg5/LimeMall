@@ -16,6 +16,7 @@ import com.limemall.mapper.PmsProductMapper;
 import com.limemall.mapper.PmsSkuMapper;
 import com.limemall.vo.ProductDetailVO;
 import com.limemall.vo.ProductVO;
+import com.limemall.vo.ProductRatingVO;
 import com.limemall.util.HtmlSanitizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -49,18 +50,33 @@ public class ProductService {
     private final PmsSkuMapper skuMapper;
     private final PmsBrandMapper brandMapper;
     private final PmsCategoryMapper categoryMapper;
+    private final CommentService commentService;
 
     /**
-     * 分页查询商品。选择一级分类时自动包含其下所有二级分类的商品。
+     * 分页查询商品（管理端，默认排序）。
      */
     public PageResult<ProductVO> page(long pageNum, long pageSize, String name,
                                       Long categoryId, Long brandId, Integer publishStatus) {
+        return page(pageNum, pageSize, name, categoryId, brandId, publishStatus, null);
+    }
+
+    /**
+     * 分页查询商品（支持前台排序）。选择一级分类时自动包含其下所有二级分类的商品。
+     *
+     * @param sort 排序：sales（销量降序）/ priceAsc / priceDesc / 其他=默认（排序值+上新）
+     */
+    public PageResult<ProductVO> page(long pageNum, long pageSize, String name,
+                                      Long categoryId, Long brandId, Integer publishStatus, String sort) {
         LambdaQueryWrapper<PmsProduct> wrapper = new LambdaQueryWrapper<>();
         wrapper.like(StringUtils.hasText(name), PmsProduct::getName, name)
                 .eq(publishStatus != null, PmsProduct::getPublishStatus, publishStatus)
-                .eq(brandId != null, PmsProduct::getBrandId, brandId)
-                .orderByDesc(PmsProduct::getSort)
-                .orderByDesc(PmsProduct::getId);
+                .eq(brandId != null, PmsProduct::getBrandId, brandId);
+        switch (sort == null ? "" : sort) {
+            case "sales" -> wrapper.orderByDesc(PmsProduct::getSales);
+            case "priceAsc" -> wrapper.orderByAsc(PmsProduct::getPrice);
+            case "priceDesc" -> wrapper.orderByDesc(PmsProduct::getPrice);
+            default -> wrapper.orderByDesc(PmsProduct::getSort).orderByDesc(PmsProduct::getId);
+        }
         if (categoryId != null) {
             PmsCategory category = categoryMapper.selectById(categoryId);
             if (category != null && category.getLevel() == 1) {
@@ -76,17 +92,23 @@ public class ProductService {
         }
         Page<PmsProduct> page = productMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
 
-        // 批量装载品牌与分类名称，避免 N+1 查询
+        // 批量装载品牌、分类名称与评分聚合，避免 N+1 查询
         Map<Long, String> brandNames = brandMapper.selectList(null).stream()
                 .collect(Collectors.toMap(PmsBrand::getId, PmsBrand::getName));
         Map<Long, String> categoryNames = categoryMapper.selectList(null).stream()
                 .collect(Collectors.toMap(PmsCategory::getId, PmsCategory::getName));
+        Map<Long, ProductRatingVO> ratings = commentService.allRatings();
 
         List<ProductVO> records = page.getRecords().stream().map(product -> {
             ProductVO vo = new ProductVO();
             BeanUtils.copyProperties(product, vo);
             vo.setBrandName(product.getBrandId() == null ? "" : brandNames.getOrDefault(product.getBrandId(), ""));
             vo.setCategoryName(categoryNames.getOrDefault(product.getCategoryId(), ""));
+            ProductRatingVO rating = ratings.get(product.getId());
+            if (rating != null) {
+                vo.setAvgRating(rating.getAvgRating());
+                vo.setCommentCount(rating.getCommentCount());
+            }
             return vo;
         }).toList();
         return PageResult.of(page, records);
@@ -112,6 +134,9 @@ public class ProductService {
                 .eq(PmsSku::getProductId, id)
                 .orderByAsc(PmsSku::getId));
         vo.setSkus(skus);
+        ProductRatingVO rating = commentService.ratingOf(id);
+        vo.setAvgRating(rating.getAvgRating());
+        vo.setCommentCount(rating.getCommentCount());
         return vo;
     }
 

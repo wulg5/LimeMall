@@ -21,8 +21,12 @@ public class MemberInfoVO {
     /** 会员等级：1普通 2银卡 3金卡 4钻石 */
     private Integer level;
 
+    /** 积分（站内货币，可兑换优惠券） */
     private Integer points;
 
-    /** 升级到下一等级所需积分（钻石会员为 null） */
-    private Integer nextLevelPoints;
+    /** 成长值（只增不减，决定等级） */
+    private Integer growth;
+
+    /** 升级到下一等级所需成长值（钻石会员为 null） */
+    private Integer nextLevelGrowth;
 }

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.limemall.entity.OmsOrder;
 import com.limemall.entity.OmsOrderItem;
+import com.limemall.entity.PmsComment;
 import com.limemall.entity.PmsProduct;
 import com.limemall.entity.PmsSku;
 import com.limemall.entity.SmsCoupon;
@@ -12,6 +13,7 @@ import com.limemall.entity.UmsAdmin;
 import com.limemall.entity.UmsMember;
 import com.limemall.mapper.OmsOrderItemMapper;
 import com.limemall.mapper.OmsOrderMapper;
+import com.limemall.mapper.PmsCommentMapper;
 import com.limemall.mapper.PmsProductMapper;
 import com.limemall.mapper.PmsSkuMapper;
 import com.limemall.mapper.SmsCouponMapper;
@@ -56,6 +58,7 @@ public class DemoDataInitializer implements CommandLineRunner {
     private final UmsMemberMapper memberMapper;
     private final OmsOrderMapper orderMapper;
     private final OmsOrderItemMapper itemMapper;
+    private final PmsCommentMapper commentMapper;
     private final PmsProductMapper productMapper;
     private final PmsSkuMapper skuMapper;
     private final SmsCouponMapper couponMapper;
@@ -84,6 +87,7 @@ public class DemoDataInitializer implements CommandLineRunner {
     public void run(String... args) {
         initPasswords();
         initDemoOrders();
+        initDemoComments();
     }
 
     /**
@@ -283,5 +287,57 @@ public class DemoDataInitializer implements CommandLineRunner {
             }
         }
         log.info("演示订单数据生成完成：60 条订单");
+    }
+
+    /**
+     * 为已完成订单生成演示评价（幂等：已存在评价时跳过）。
+     */
+    private void initDemoComments() {
+        Long count = commentMapper.selectCount(null);
+        if (count != null && count > 0) {
+            return;
+        }
+        List<OmsOrder> completed = orderMapper.selectList(new LambdaQueryWrapper<OmsOrder>()
+                .eq(OmsOrder::getStatus, 3)
+                .orderByDesc(OmsOrder::getId)
+                .last("LIMIT 15"));
+        if (completed.isEmpty()) {
+            return;
+        }
+        String[] contents = {
+                "东西不错，包装完好，物流也快，好评！",
+                "第二次回购了，品质稳定，值得推荐。",
+                "实物质感比图片还好，家里人都说不错。",
+                "性价比很高，用了一周没有任何问题。",
+                "发货速度很快，客服态度也很好，满意。",
+                "整体满意，小瑕疵是外包装有一点点压痕。",
+                "和描述一致，做工细致，五星好评。",
+                "用起来很顺手，朋友看到也下单了。"
+        };
+        int[] ratings = {5, 5, 5, 4, 5, 4, 5, 5};
+        int seeded = 0;
+        for (OmsOrder order : completed) {
+            List<OmsOrderItem> items = itemMapper.selectList(
+                    new LambdaQueryWrapper<OmsOrderItem>()
+                            .eq(OmsOrderItem::getOrderId, order.getId()));
+            if (items.isEmpty()) {
+                continue;
+            }
+            OmsOrderItem item = items.get(0);
+            UmsMember member = memberMapper.selectById(order.getMemberId());
+            PmsComment comment = new PmsComment();
+            comment.setProductId(item.getProductId());
+            comment.setOrderId(order.getId());
+            comment.setMemberId(order.getMemberId());
+            comment.setMemberNickname(member == null ? "" : member.getNickname());
+            comment.setMemberLevel(member == null || member.getLevel() == null ? 1 : member.getLevel());
+            comment.setRating(ratings[seeded % ratings.length]);
+            comment.setContent(contents[seeded % contents.length]);
+            commentMapper.insert(comment);
+            seeded++;
+        }
+        if (seeded > 0) {
+            log.info("演示评价数据生成完成：{} 条", seeded);
+        }
     }
 }

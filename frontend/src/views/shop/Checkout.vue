@@ -59,7 +59,7 @@
     <div class="summary-bar">
       <div class="amounts">
         <span>商品总额：{{ money(totalAmount) }}</span>
-        <span>运费：{{ money(freightAmount) }}<i v-if="freightAmount > 0">（满 99 包邮）</i></span>
+        <span>运费：{{ money(freightAmount) }}<i v-if="(shopStore.info?.level ?? 1) >= 3">（金卡会员免运费）</i><i v-else-if="freightAmount > 0">（满 99 包邮）</i></span>
         <span>优惠：-{{ money(couponAmount) }}</span>
       </div>
       <div class="pay-row">
@@ -128,7 +128,13 @@ const couponAmount = computed(() => {
   return Math.min(discount, totalAmount.value)
 })
 
-const freightAmount = computed(() => (totalAmount.value < 99 ? 10 : 0))
+const freightAmount = computed(() => {
+  // 金卡及以上会员全场免运费；其余满 99 包邮
+  if ((shopStore.info?.level ?? 1) >= 3) {
+    return 0
+  }
+  return totalAmount.value < 99 ? 10 : 0
+})
 
 const payAmount = computed(() =>
   Math.max(0, totalAmount.value - couponAmount.value + freightAmount.value)

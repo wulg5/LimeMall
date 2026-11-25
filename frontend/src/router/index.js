@@ -33,6 +33,7 @@ const routes = [
       { path: 'checkout', component: () => import('@/views/shop/Checkout.vue'), meta: { title: '确认订单', auth: true } },
       { path: 'orders', component: () => import('@/views/shop/Orders.vue'), meta: { title: '我的订单', auth: true } },
       { path: 'coupons', component: () => import('@/views/shop/Coupons.vue'), meta: { title: '领券中心' } },
+      { path: 'points', component: () => import('@/views/shop/Points.vue'), meta: { title: '积分商城' } },
       { path: 'member', component: () => import('@/views/shop/Member.vue'), meta: { title: '会员中心', auth: true } },
       { path: 'login', component: () => import('@/views/shop/Login.vue'), meta: { title: '会员登录' } }
     ]
@@ -54,6 +55,7 @@ const routes = [
       { path: 'product/edit', component: () => import('@/views/product/edit.vue'), meta: { title: '商品编辑' } },
       { path: 'product/brand', component: () => import('@/views/product/brand.vue'), meta: { title: '品牌管理' } },
       { path: 'product/category', component: () => import('@/views/product/category.vue'), meta: { title: '分类管理' } },
+      { path: 'product/comment', component: () => import('@/views/product/comment.vue'), meta: { title: '评价管理' } },
       { path: 'order/list', component: () => import('@/views/order/list.vue'), meta: { title: '订单列表' } },
       { path: 'order/return', component: () => import('@/views/order/return.vue'), meta: { title: '退款审核' } },
       { path: 'chat', component: () => import('@/views/chat/ChatWorkbench.vue'), meta: { title: '客服聊天' } },

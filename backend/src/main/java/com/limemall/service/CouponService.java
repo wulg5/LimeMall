@@ -233,6 +233,80 @@ public class CouponService {
         }).filter(vo -> vo != null).toList();
     }
 
+    /**
+     * 积分商城：可兑换优惠券列表（仅限 status=1 且在有效期内、设置了积分价的券）。
+     */
+    public List<PortalCouponVO> exchangeList() {
+        LocalDateTime now = LocalDateTime.now();
+        List<SmsCoupon> coupons = couponMapper.selectList(new LambdaQueryWrapper<SmsCoupon>()
+                .eq(SmsCoupon::getStatus, 1)
+                .gt(SmsCoupon::getPointsPrice, 0)
+                .le(SmsCoupon::getStartTime, now)
+                .ge(SmsCoupon::getEndTime, now)
+                .orderByAsc(SmsCoupon::getPointsPrice));
+        return coupons.stream().map(coupon -> {
+            PortalCouponVO vo = new PortalCouponVO();
+            vo.setId(coupon.getId());
+            vo.setName(coupon.getName());
+            vo.setType(coupon.getType());
+            vo.setAmount(coupon.getAmount());
+            vo.setMinAmount(coupon.getMinAmount());
+            vo.setStartTime(coupon.getStartTime());
+            vo.setEndTime(coupon.getEndTime());
+            vo.setRemaining(coupon.getTotalCount() - coupon.getReceiveCount());
+            vo.setPointsPrice(coupon.getPointsPrice());
+            vo.setReceived(false);
+            return vo;
+        }).toList();
+    }
+
+    /**
+     * 积分兑换优惠券。
+     *
+     * 并发安全：
+     * - 积分扣减使用条件更新（points >= 兑换价），余额不足时影响行数为 0；
+     * - 券发放使用条件更新（receive_count < total_count）防超兑；
+     * - 全程同一事务，任一步失败自动回滚。
+     */
+    @Transactional
+    public void exchange(Long memberId, Long couponId) {
+        SmsCoupon coupon = couponMapper.selectById(couponId);
+        LocalDateTime now = LocalDateTime.now();
+        if (coupon == null || coupon.getStatus() != 1
+                || coupon.getPointsPrice() == null || coupon.getPointsPrice() <= 0) {
+            throw new BusinessException("该优惠券不支持积分兑换");
+        }
+        if (now.isBefore(coupon.getStartTime()) || now.isAfter(coupon.getEndTime())) {
+            throw new BusinessException("不在积分兑换有效期内");
+        }
+        Long myCount = couponMemberMapper.selectCount(new LambdaQueryWrapper<SmsCouponMember>()
+                .eq(SmsCouponMember::getCouponId, couponId)
+                .eq(SmsCouponMember::getMemberId, memberId));
+        if (myCount >= coupon.getPerLimit()) {
+            throw new BusinessException("已达到该券兑换上限");
+        }
+        int deducted = memberMapper.update(null, new LambdaUpdateWrapper<UmsMember>()
+                .setSql("points = points - " + coupon.getPointsPrice())
+                .eq(UmsMember::getId, memberId)
+                .ge(UmsMember::getPoints, coupon.getPointsPrice()));
+        if (deducted == 0) {
+            throw new BusinessException("积分不足");
+        }
+        int stock = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
+                .setSql("receive_count = receive_count + 1")
+                .eq(SmsCoupon::getId, couponId)
+                .apply("receive_count < total_count"));
+        if (stock == 0) {
+            throw new BusinessException("优惠券已被兑完");
+        }
+        SmsCouponMember couponMember = new SmsCouponMember();
+        couponMember.setCouponId(couponId);
+        couponMember.setMemberId(memberId);
+        couponMember.setStatus(0);
+        couponMember.setReceiveTime(now);
+        couponMemberMapper.insert(couponMember);
+    }
+
     // ==================================================================
     // 私有方法
     // ==================================================================
@@ -255,5 +329,6 @@ public class CouponService {
         coupon.setPerLimit(dto.getPerLimit());
         coupon.setStartTime(dto.getStartTime());
         coupon.setEndTime(dto.getEndTime());
+        coupon.setPointsPrice(dto.getPointsPrice() == null ? 0 : dto.getPointsPrice());
     }
 }

@@ -43,8 +43,11 @@ public class UmsMember {
     /** 会员等级：1普通 2银卡 3金卡 4钻石 */
     private Integer level;
 
-    /** 积分 */
+    /** 积分（站内货币，可获取可消耗） */
     private Integer points;
+
+    /** 成长值（只增不减，决定会员等级） */
+    private Integer growth;
 
     /** 状态：1正常 0禁用 */
     private Integer status;

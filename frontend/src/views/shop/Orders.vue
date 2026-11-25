@@ -46,6 +46,10 @@
             <template v-if="order.status === 2">
               <el-button size="small" type="primary" @click="handleReceive(order)">确认收货</el-button>
             </template>
+            <template v-if="order.status === 3 && !order.commented">
+              <el-button size="small" type="success" plain @click="openReview(order)">评价商品</el-button>
+            </template>
+            <span v-else-if="order.status === 3 && order.commented" class="commented-tip">已评价</span>
           </div>
         </div>
       </div>
@@ -56,6 +60,25 @@
       </div>
     </div>
     <el-empty v-else description="暂无相关订单" />
+
+    <!-- 评价弹窗 -->
+    <el-dialog v-model="reviewVisible" title="评价商品" width="560px" destroy-on-close>
+      <div class="review-list">
+        <div v-for="item in reviewItems" :key="item.productId" class="review-item">
+          <div class="review-goods">
+            <img :src="item.pic || '/img/logo.svg'" alt="" />
+            <span class="review-name">{{ item.productName }}</span>
+            <el-rate v-model="item.rating" />
+          </div>
+          <el-input v-model="item.content" type="textarea" :rows="2" maxlength="500" show-word-limit
+                    placeholder="说说这件商品怎么样吧（必填）" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="reviewVisible = false">取消</el-button>
+        <el-button type="primary" :loading="reviewSaving" @click="submitReview">提交评价</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -63,7 +86,9 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { cancelOrder, getMyOrders, payOrder, receiveOrder, refundOrder } from '@/api/portal'
+import {
+  cancelOrder, getMyOrderDetail, getMyOrders, payOrder, receiveOrder, refundOrder, submitComments
+} from '@/api/portal'
 import { money, ORDER_STATUS } from '@/utils/format'
 
 /** 与后端 limemall.order.pay-timeout-minutes 保持一致（默认 30 分钟） */
@@ -190,6 +215,48 @@ async function openRefund(order) {
   ElMessage.success('退款申请已提交，等待商家审核')
   load()
 }
+
+/* ---------------- 评价 ---------------- */
+const reviewVisible = ref(false)
+const reviewSaving = ref(false)
+const reviewOrder = ref(null)
+const reviewItems = ref([])
+
+async function openReview(order) {
+  const detail = await getMyOrderDetail(order.id)
+  reviewOrder.value = order
+  reviewItems.value = (detail.items || []).map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    pic: item.productPic,
+    rating: 5,
+    content: ''
+  }))
+  reviewVisible.value = true
+}
+
+async function submitReview() {
+  if (reviewItems.value.some((item) => !item.content.trim())) {
+    ElMessage.warning('请填写每件商品的评价内容')
+    return
+  }
+  reviewSaving.value = true
+  try {
+    await submitComments({
+      orderId: reviewOrder.value.id,
+      comments: reviewItems.value.map((item) => ({
+        productId: item.productId,
+        rating: item.rating,
+        content: item.content.trim()
+      }))
+    })
+    ElMessage.success('评价成功，感谢您的反馈')
+    reviewVisible.value = false
+    load()
+  } finally {
+    reviewSaving.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -298,5 +365,41 @@ async function openRefund(order) {
   display: flex;
   justify-content: center;
   margin-top: 8px;
+}
+
+.commented-tip {
+  font-size: 12px;
+  color: #9ca3af;
+  padding: 0 4px;
+}
+
+.review-item {
+  border: 1px solid #f1f5f3;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.review-goods {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.review-goods img {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.review-name {
+  flex: 1;
+  font-size: 13px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -10,6 +10,7 @@ import com.limemall.dto.OrderCreateDTO;
 import com.limemall.entity.OmsOrder;
 import com.limemall.entity.OmsOrderItem;
 import com.limemall.entity.OmsOrderReturn;
+import com.limemall.entity.PmsComment;
 import com.limemall.entity.PmsProduct;
 import com.limemall.entity.PmsSku;
 import com.limemall.entity.SmsCoupon;
@@ -18,6 +19,7 @@ import com.limemall.entity.UmsMember;
 import com.limemall.mapper.OmsOrderItemMapper;
 import com.limemall.mapper.OmsOrderMapper;
 import com.limemall.mapper.OmsOrderReturnMapper;
+import com.limemall.mapper.PmsCommentMapper;
 import com.limemall.mapper.PmsProductMapper;
 import com.limemall.mapper.PmsSkuMapper;
 import com.limemall.mapper.SmsCouponMapper;
@@ -42,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -73,6 +76,7 @@ public class OrderService {
     private final OmsOrderMapper orderMapper;
     private final OmsOrderItemMapper itemMapper;
     private final OmsOrderReturnMapper returnMapper;
+    private final PmsCommentMapper commentMapper;
     private final UmsMemberMapper memberMapper;
     private final PmsSkuMapper skuMapper;
     private final PmsProductMapper productMapper;
@@ -243,9 +247,12 @@ public class OrderService {
         }
         totalAmount = totalAmount.setScale(2, RoundingMode.HALF_UP);
 
-        // 运费规则：满 99 包邮
-        BigDecimal freightAmount = totalAmount.compareTo(FREE_FREIGHT_THRESHOLD) < 0
-                ? FREIGHT_AMOUNT : BigDecimal.ZERO;
+        // 运费规则：金卡及以上会员全场免运费；其余满 99 包邮
+        UmsMember buyer = memberMapper.selectById(memberId);
+        int buyerLevel = buyer == null || buyer.getLevel() == null ? 1 : buyer.getLevel();
+        BigDecimal freightAmount = MemberLevels.freeShipping(buyerLevel)
+                ? BigDecimal.ZERO
+                : (totalAmount.compareTo(FREE_FREIGHT_THRESHOLD) < 0 ? FREIGHT_AMOUNT : BigDecimal.ZERO);
 
         // 优惠券校验与抵扣计算
         BigDecimal couponAmount = BigDecimal.ZERO;
@@ -340,16 +347,21 @@ public class OrderService {
                     .setSql("sales = sales + " + item.getQuantity())
                     .eq(PmsProduct::getId, item.getProductId()));
         }
-        // 会员成长：累计积分并按阈值自动升降级
+        // 会员成长（双账户模型）：
+        // 成长值 += 实付金额（只增不减，决定等级——积分消费不会掉级）；
+        // 积分 += 实付金额 × 等级倍率（站内货币，可在积分商城兑换优惠券）。
         UmsMember member = memberMapper.selectById(memberId);
         if (member != null) {
-            int earned = order.getPayAmount().intValue()
-                    * MemberLevels.pointMultiplier(member.getLevel());
-            int totalPoints = member.getPoints() + earned;
+            int payYuan = order.getPayAmount().intValue();
+            int currentGrowth = member.getGrowth() == null ? 0 : member.getGrowth();
+            int currentPoints = member.getPoints() == null ? 0 : member.getPoints();
+            int earnedPoints = (int) ((long) payYuan * MemberLevels.pointPercent(member.getLevel()) / 100);
+            int newGrowth = currentGrowth + payYuan;
             UmsMember memberUpdate = new UmsMember();
             memberUpdate.setId(memberId);
-            memberUpdate.setPoints(totalPoints);
-            memberUpdate.setLevel(MemberLevels.resolveLevel(totalPoints));
+            memberUpdate.setPoints(currentPoints + earnedPoints);
+            memberUpdate.setGrowth(newGrowth);
+            memberUpdate.setLevel(MemberLevels.resolveLevel(newGrowth));
             memberMapper.updateById(memberUpdate);
         }
     }
@@ -501,12 +513,17 @@ public class OrderService {
         Map<Long, UmsMember> memberMap = memberMapper.selectBatchIds(
                         orders.stream().map(OmsOrder::getMemberId).distinct().toList())
                 .stream().collect(Collectors.toMap(UmsMember::getId, Function.identity()));
+        Set<Long> commentedOrderIds = commentMapper.selectList(new LambdaQueryWrapper<PmsComment>()
+                        .select(PmsComment::getOrderId)
+                        .in(PmsComment::getOrderId, orderIds))
+                .stream().map(PmsComment::getOrderId).collect(Collectors.toSet());
 
         return orders.stream().map(order -> {
             OrderVO vo = new OrderVO();
             BeanUtils.copyProperties(order, vo);
             UmsMember member = memberMap.get(order.getMemberId());
             vo.setMemberNickname(member == null ? "" : member.getNickname());
+            vo.setCommented(commentedOrderIds.contains(order.getId()));
             List<OmsOrderItem> items = itemsMap.getOrDefault(order.getId(), List.of());
             vo.setItemCount(items.stream().mapToInt(OmsOrderItem::getQuantity).sum());
             if (!items.isEmpty()) {

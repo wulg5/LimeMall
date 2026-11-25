@@ -47,6 +47,12 @@ public class ProductDetailVO {
 
     private Integer publishStatus;
 
+    /** 平均评分（一位小数，无评价时为空） */
+    private BigDecimal avgRating;
+
+    /** 评价数量 */
+    private Long commentCount;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

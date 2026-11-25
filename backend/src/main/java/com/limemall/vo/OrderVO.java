@@ -39,6 +39,9 @@ public class OrderVO {
     /** 首个商品图片（列表摘要展示） */
     private String firstItemPic;
 
+    /** 是否已评价（已完成订单展示评价入口用） */
+    private Boolean commented;
+
     private String receiverName;
 
     private String receiverPhone;

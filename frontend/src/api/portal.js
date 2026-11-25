@@ -46,6 +46,28 @@ export function getMyCoupons() {
   return request.get('/portal/coupons/mine')
 }
 
+/** 积分商城：可兑换优惠券 */
+export function getExchangeCoupons() {
+  return request.get('/portal/coupons/exchange')
+}
+
+/** 积分兑换优惠券 */
+export function exchangeCoupon(id) {
+  return request.post(`/portal/coupons/${id}/exchange`)
+}
+
+/* ---------------- 商品评价 ---------------- */
+
+/** 商品公开评价 */
+export function getProductComments(productId, params) {
+  return request.get(`/portal/public/products/${productId}/comments`, { params })
+}
+
+/** 提交订单评价 */
+export function submitComments(data) {
+  return request.post('/portal/comments', data)
+}
+
 /* ---------------- 订单 ---------------- */
 
 export function createOrder(data) {

@@ -7,21 +7,31 @@
         <div class="member-base">
           <h2>
             {{ info.nickname }}
-            <el-tag :type="levelInfo.tag" effect="light">{{ levelInfo.text }}</el-tag>
+            <level-badge :level="info.level" class="big-badge" />
           </h2>
-          <p>账号 {{ info.username }} · 当前积分 <b>{{ info.points }}</b></p>
+          <p>账号 {{ info.username }}</p>
+        </div>
+        <div class="stat-chips">
+          <div class="stat-chip">
+            <div class="chip-label">成长值</div>
+            <div class="chip-value">{{ info.growth ?? 0 }}</div>
+          </div>
+          <div class="stat-chip">
+            <div class="chip-label">积分余额</div>
+            <div class="chip-value">{{ info.points ?? 0 }}</div>
+          </div>
         </div>
         <div class="member-actions">
+          <el-button @click="$router.push('/shop/points')">积分商城</el-button>
           <el-button @click="$router.push('/shop/orders')">我的订单</el-button>
-          <el-button @click="$router.push('/shop/coupons?tab=mine')">我的优惠券</el-button>
-          <el-button type="primary" @click="$router.push('/shop')">继续购物</el-button>
+          <el-button type="primary" @click="$router.push('/shop/coupons?tab=mine')">我的优惠券</el-button>
         </div>
       </div>
 
       <div class="progress-block">
         <div class="progress-label">
-          <template v-if="info.nextLevelPoints">
-            距离 {{ nextLevelText }} 还需 <b>{{ info.nextLevelPoints - info.points }}</b> 积分
+          <template v-if="info.nextLevelGrowth">
+            距离 {{ nextLevelText }} 还需 <b>{{ info.nextLevelGrowth - (info.growth ?? 0) }}</b> 成长值（消费 1 元 = 1 成长值，只增不减）
           </template>
           <template v-else>已是最高等级，尊享钻石会员全部权益</template>
         </div>
@@ -32,12 +42,18 @@
     <!-- 等级权益 -->
     <div class="benefit-block">
       <h3>等级权益</h3>
-      <p class="benefit-tip">消费 1 元累积 1 积分（金卡 2 倍、钻石 3 倍），积分达标自动升级</p>
+      <p class="benefit-tip">
+        成长值由消费累计（1 元 = 1 成长值），决定等级且只升不降；
+        积分按等级倍率获取（金卡 1.2 倍 / 钻石 1.5 倍），可在积分商城以 100 积分 = 1 元兑换优惠券。
+      </p>
       <div class="benefit-grid">
         <div v-for="lv in LEVELS" :key="lv.level" class="benefit-card"
              :class="{ current: info.level === lv.level }">
-          <div class="lv-name">{{ lv.text }}</div>
-          <div class="lv-points">{{ lv.points === 0 ? '注册即享' : `${lv.points} 积分起` }}</div>
+          <div class="lv-head">
+            <span class="lv-name">{{ lv.text }}</span>
+            <level-badge v-if="lv.level > 1" :level="lv.level" />
+          </div>
+          <div class="lv-points">{{ lv.growth === 0 ? '注册即享' : `${lv.growth} 成长值起` }}</div>
           <ul>
             <li v-for="perk in lv.perks" :key="perk">{{ perk }}</li>
           </ul>
@@ -51,42 +67,38 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useShopStore } from '@/stores/shop'
-import { MEMBER_LEVEL } from '@/utils/format'
+import LevelBadge from '@/components/LevelBadge.vue'
 
 const shopStore = useShopStore()
 
 const LEVELS = [
-  { level: 1, points: 0, text: '普通会员', perks: ['注册即享购物权益', '参与领券中心活动', '7 天无理由退款'] },
-  { level: 2, points: 500, text: '银卡会员', perks: ['专属客服优先响应', '生日礼券一张', '积分正常累积'], tag: 'info' },
-  { level: 3, points: 2000, text: '金卡会员', perks: ['消费积分 2 倍累积', '专属优惠活动', '专属客服优先响应'] },
-  { level: 4, points: 5000, text: '钻石会员', perks: ['消费积分 3 倍累积', '新品优先购买', '专属客服一对一服务'] }
+  { level: 1, growth: 0, text: '普通会员', perks: ['购物累计成长值', '积分按 1 倍获取', '参与领券中心活动'] },
+  { level: 2, growth: 1000, text: '银卡会员', perks: ['积分按 1 倍获取', '专属客服优先响应', '会员日活动提醒'] },
+  { level: 3, growth: 5000, text: '金卡会员', perks: ['积分按 1.2 倍获取', '全场免运费', '专属客服优先响应'] },
+  { level: 4, growth: 15000, text: '钻石会员', perks: ['积分按 1.5 倍获取', '全场免运费', '新品优先购买', '专属客服一对一'] }
 ]
 
-const LEVEL_BASE = { 1: 0, 2: 500, 3: 2000, 4: 5000 }
+const LEVEL_BASE = { 1: 0, 2: 1000, 3: 5000, 4: 15000 }
 
 const info = computed(() => shopStore.info)
 
-const levelInfo = computed(() =>
-  MEMBER_LEVEL[info.value?.level] || MEMBER_LEVEL[1]
-)
-
 const nextLevelText = computed(() => {
-  if (!info.value?.nextLevelPoints) return ''
-  const nextLevel = { 500: '银卡会员', 2000: '金卡会员', 5000: '钻石会员' }
-  return nextLevel[info.value.nextLevelPoints] || ''
+  if (!info.value?.nextLevelGrowth) return ''
+  const names = { 1000: '银卡会员', 5000: '金卡会员', 15000: '钻石会员' }
+  return names[info.value.nextLevelGrowth] || ''
 })
 
 const progressPercent = computed(() => {
   if (!info.value) return 0
-  if (!info.value.nextLevelPoints) return 100
+  const growth = info.value.growth ?? 0
+  if (!info.value.nextLevelGrowth) return 100
   const base = LEVEL_BASE[info.value.level] ?? 0
-  const span = info.value.nextLevelPoints - base
-  const done = info.value.points - base
+  const span = info.value.nextLevelGrowth - base
+  const done = growth - base
   return Math.max(0, Math.min(100, Math.round((done / span) * 100)))
 })
 
 onMounted(async () => {
-  // 重新拉取，保证积分/等级为最新
   try {
     await shopStore.fetchMe()
   } catch (e) {
@@ -103,8 +115,8 @@ onMounted(async () => {
 }
 
 .member-card {
-  background: linear-gradient(130deg, #065f46, #10b981);
-  border-radius: 18px;
+  background: linear-gradient(130deg, #064e3b, #10b981);
+  border-radius: 16px;
   padding: 28px 30px;
   color: #ffffff;
 }
@@ -113,6 +125,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 18px;
+  flex-wrap: wrap;
 }
 
 .member-base h2 {
@@ -126,17 +139,39 @@ onMounted(async () => {
 .member-base p {
   margin: 0;
   font-size: 13px;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
-.member-base b {
-  font-size: 18px;
+.stat-chips {
+  display: flex;
+  gap: 12px;
+  margin-left: 18px;
+}
+
+.stat-chip {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 10px 18px;
+  text-align: center;
+  min-width: 92px;
+}
+
+.chip-label {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.chip-value {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 4px;
 }
 
 .member-actions {
   margin-left: auto;
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .progress-block {
@@ -158,9 +193,9 @@ onMounted(async () => {
 
 .benefit-block {
   background: #ffffff;
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 24px 26px;
-  box-shadow: 0 1px 3px rgba(15, 46, 36, 0.05);
+  border: 1px solid #eef2f0;
 }
 
 .benefit-block h3 {
@@ -172,6 +207,7 @@ onMounted(async () => {
   color: #9ca3af;
   font-size: 13px;
   margin: 0 0 18px;
+  line-height: 1.8;
 }
 
 .benefit-grid {
@@ -191,6 +227,12 @@ onMounted(async () => {
 .benefit-card.current {
   border-color: var(--el-color-primary);
   background: #f2fbf7;
+}
+
+.lv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .lv-name {
@@ -214,6 +256,12 @@ onMounted(async () => {
   font-size: 12.5px;
   color: #4b5563;
   line-height: 2;
+}
+
+.big-badge :deep(span) {
+  font-size: 12px;
+  height: 22px;
+  padding: 0 9px;
 }
 
 @media (max-width: 900px) {

@@ -94,7 +94,9 @@ public class PortalAuthService {
         vo.setPhone(member.getPhone());
         vo.setLevel(member.getLevel());
         vo.setPoints(member.getPoints());
-        vo.setNextLevelPoints(MemberLevels.nextLevelPoints(member.getPoints()));
+        int growth = member.getGrowth() == null ? 0 : member.getGrowth();
+        vo.setGrowth(growth);
+        vo.setNextLevelGrowth(MemberLevels.nextLevelGrowth(growth));
         return vo;
     }
 }

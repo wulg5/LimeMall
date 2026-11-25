@@ -45,4 +45,17 @@ public class PortalCouponController {
     public Result<List<MemberCouponVO>> mine() {
         return Result.ok(couponService.mine(SecurityUtils.getMemberId()));
     }
+
+    @GetMapping("/exchange")
+    @Operation(summary = "积分商城可兑换优惠券")
+    public Result<List<PortalCouponVO>> exchangeList() {
+        return Result.ok(couponService.exchangeList());
+    }
+
+    @PostMapping("/{id}/exchange")
+    @Operation(summary = "积分兑换优惠券")
+    public Result<Void> exchange(@PathVariable Long id) {
+        couponService.exchange(SecurityUtils.getMemberId(), id);
+        return Result.ok();
+    }
 }

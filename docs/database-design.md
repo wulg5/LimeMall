@@ -45,7 +45,7 @@ pms_brand    ──< pms_product
 | 3 | `ums_menu` | 菜单权限 | `type` 区分目录/菜单/按钮；`perm` 与后端接口 `@PreAuthorize` 一一对应 |
 | 4 | `ums_admin_role` | 管理员-角色 | 联合主键，天然去重 |
 | 5 | `ums_role_menu` | 角色-菜单 | 联合主键 |
-| 6 | `ums_member` | 商城会员 | 用户名/手机号唯一；`level` 会员等级；注册时间索引支撑"今日新增会员"统计 |
+| 6 | `ums_member` | 商城会员 | 用户名/手机号唯一；**成长值（growth，只增不减）决定等级，积分（points）为可消耗货币**；注册时间索引支撑"今日新增会员"统计 |
 | 7 | `pms_brand` | 品牌 | 名称、首字母、排序、状态 |
 | 8 | `pms_category` | 商品分类 | 两级树（`parent_id` + `level`），区别于无限级设计——电商运营实际只需两级，简化查询 |
 | 9 | `pms_product` | 商品 SPU | `stock` 为 SKU 汇总冗余（列表页免 JOIN 聚合）；`publish_status` 上下架；`delete_status` 逻辑删除 |
@@ -53,9 +53,10 @@ pms_brand    ──< pms_product
 | 11 | `oms_order` | 订单主表 | 状态机 `0待付款→1待发货→2已发货→3已完成`，`0/1→4已关闭`；收货信息快照；金额字段 `pay_amount = total_amount - coupon_amount + freight_amount` 恒等式 |
 | 12 | `oms_order_item` | 订单明细 | 商品快照字段；`idx_order` 支撑详情联查 |
 | 13 | `oms_order_return` | 退款申请 | 状态 `0待审核/1已通过/2已拒绝`；审核动作与订单状态联动（通过则订单关闭、库存回补） |
-| 14 | `sms_coupon` | 优惠券 | `type` 区分满减券/折扣券；`receive_count/used_count` 计数冗余；`per_limit` 每人限领 |
+| 14 | `sms_coupon` | 优惠券 | `type` 区分满减券/折扣券；`receive_count/used_count` 计数冗余；`per_limit` 每人限领；`points_price` 支持积分商城兑换（0=不可兑换） |
 | 15 | `sms_coupon_member` | 会员优惠券 | 领取记录 + 使用状态 + 关联订单，支撑"我的优惠券"与核销追溯 |
 | 16 | `ums_chat_message` | 客服聊天消息 | `from_type` 区分发送方（会员/管理员）；读历史即按接收方标记已读；纯文本存储防 XSS |
+| 17 | `pms_comment` | 商品评价 | `(order_id, product_id)` 唯一键防重复评价；昵称/等级快照；评分聚合支撑列表与详情星级 |
 
 ## 四、关键业务建模说明
 
@@ -88,11 +89,13 @@ SPU（Standard Product Unit）描述"商品是什么"，SKU（Stock Keeping Unit
 - 领取动作对 `sms_coupon.receive_count` 做条件更新（`receive_count < total_count`）防超发；
 - 每人限领校验 `sms_coupon_member` 中该会员该券的领取条数。
 
-### 4.5 会员成长体系
-- 积分：支付成功按 `实付金额 × 等级倍率` 累计（1 元 = 1 积分；金卡 ×2、钻石 ×3）；
-- 等级按累计积分自动计算（单一事实来源，后端 `MemberLevels` 常量）：
-  `普通 0 / 银卡 500 / 金卡 2000 / 钻石 5000`；
-- 等级与积分冗余评估：等级可由积分实时推导，选择落库是为了管理端列表免计算且便于运营调整，写入点统一在支付事务内。
+### 4.5 会员成长体系（双账户模型）
+- **成长值（growth）**：消费 1 元 = 1 成长值，**只增不减**，决定会员等级
+  （普通 0 / 银卡 1000 / 金卡 5000 / 钻石 15000）——积分消费不会导致掉级；
+- **积分（points）**：站内货币，按等级倍率获取（普通/银卡 100%、金卡 120%、钻石 150%），
+  用于积分商城兑换优惠券（固定 **100 积分 = 1 元面额**）；
+- 等级权益：金卡及以上**全场免运费**、积分加速；规则集中在 `MemberLevels` 单一事实来源；
+- 防通胀设计：获取速率（1 元 = 1 分）与兑换率（100:1）恒定，积分消耗渠道明确，返现率封顶 1%。
 
 ### 4.6 订单超时关单
 - 定时任务每 60 秒扫描 `status=0 且 create_time < NOW() - 支付时限` 的订单；

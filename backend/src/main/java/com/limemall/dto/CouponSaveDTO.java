@@ -49,4 +49,8 @@ public class CouponSaveDTO {
 
     @NotNull(message = "请选择有效期结束时间")
     private LocalDateTime endTime;
+
+    /** 积分兑换价（0或空=不参与积分兑换；100 积分 = 1 元面额） */
+    @Min(value = 0, message = "积分兑换价不能为负数")
+    private Integer pointsPrice;
 }
