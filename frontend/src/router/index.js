@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useShopStore } from '@/stores/shop'
 
@@ -50,23 +51,23 @@ const routes = [
     component: () => import('@/layout/index.vue'),
     redirect: '/admin/dashboard',
     children: [
-      { path: 'dashboard', component: () => import('@/views/dashboard/index.vue'), meta: { title: '数据看板' } },
-      { path: 'product/list', component: () => import('@/views/product/list.vue'), meta: { title: '商品列表' } },
-      { path: 'product/edit', component: () => import('@/views/product/edit.vue'), meta: { title: '商品编辑' } },
-      { path: 'product/brand', component: () => import('@/views/product/brand.vue'), meta: { title: '品牌管理' } },
-      { path: 'product/category', component: () => import('@/views/product/category.vue'), meta: { title: '分类管理' } },
-      { path: 'product/comment', component: () => import('@/views/product/comment.vue'), meta: { title: '评价管理' } },
-      { path: 'order/list', component: () => import('@/views/order/list.vue'), meta: { title: '订单列表' } },
-      { path: 'order/return', component: () => import('@/views/order/return.vue'), meta: { title: '退款审核' } },
-      { path: 'chat', component: () => import('@/views/chat/ChatWorkbench.vue'), meta: { title: '客服聊天' } },
-      { path: 'member/list', component: () => import('@/views/member/list.vue'), meta: { title: '会员管理' } },
-      { path: 'marketing/coupon', component: () => import('@/views/marketing/coupon.vue'), meta: { title: '优惠券管理' } },
-      { path: 'marketing/content', component: () => import('@/views/marketing/content.vue'), meta: { title: '内容管理' } },
-      { path: 'marketing/flash', component: () => import('@/views/marketing/flash.vue'), meta: { title: '秒杀管理' } },
-      { path: 'system/admin', component: () => import('@/views/system/admin.vue'), meta: { title: '管理员管理' } },
-      { path: 'system/role', component: () => import('@/views/system/role.vue'), meta: { title: '角色管理' } },
-      { path: 'system/log', component: () => import('@/views/system/log.vue'), meta: { title: '操作日志' } },
-      { path: 'system/pay-config', component: () => import('@/views/system/payConfig.vue'), meta: { title: '支付配置' } },
+      { path: 'dashboard', component: () => import('@/views/dashboard/index.vue'), meta: { perm: "dashboard:view", title: '数据看板' } },
+      { path: 'product/list', component: () => import('@/views/product/list.vue'), meta: { perm: "pms:product:list", title: '商品列表' } },
+      { path: 'product/edit', component: () => import('@/views/product/edit.vue'), meta: { perm: ['pms:product:create','pms:product:update'], title: '商品编辑' } },
+      { path: 'product/brand', component: () => import('@/views/product/brand.vue'), meta: { perm: "pms:brand:list", title: '品牌管理' } },
+      { path: 'product/category', component: () => import('@/views/product/category.vue'), meta: { perm: "pms:category:list", title: '分类管理' } },
+      { path: 'product/comment', component: () => import('@/views/product/comment.vue'), meta: { perm: "pms:comment:list", title: '评价管理' } },
+      { path: 'order/list', component: () => import('@/views/order/list.vue'), meta: { perm: "oms:order:list", title: '订单列表' } },
+      { path: 'order/return', component: () => import('@/views/order/return.vue'), meta: { perm: "oms:return:list", title: '退款审核' } },
+      { path: 'chat', component: () => import('@/views/chat/ChatWorkbench.vue'), meta: { perm: "ums:chat:list", title: '客服聊天' } },
+      { path: 'member/list', component: () => import('@/views/member/list.vue'), meta: { perm: "ums:member:list", title: '会员管理' } },
+      { path: 'marketing/coupon', component: () => import('@/views/marketing/coupon.vue'), meta: { perm: "sms:coupon:list", title: '优惠券管理' } },
+      { path: 'marketing/content', component: () => import('@/views/marketing/content.vue'), meta: { perm: "cms:content:list", title: '内容管理' } },
+      { path: 'marketing/flash', component: () => import('@/views/marketing/flash.vue'), meta: { perm: "sms:flash:list", title: '秒杀管理' } },
+      { path: 'system/admin', component: () => import('@/views/system/admin.vue'), meta: { perm: "ums:admin:list", title: '管理员管理' } },
+      { path: 'system/role', component: () => import('@/views/system/role.vue'), meta: { perm: "ums:role:list", title: '角色管理' } },
+      { path: 'system/log', component: () => import('@/views/system/log.vue'), meta: { perm: "sys:log:list", title: '操作日志' } },
+      { path: 'system/pay-config', component: () => import('@/views/system/payConfig.vue'), meta: { perm: "sys:config:list", title: '支付配置' } },
       { path: 'system/profile', component: () => import('@/views/system/profile.vue'), meta: { title: '个人中心' } }
     ]
   },
@@ -104,6 +105,10 @@ router.beforeEach(async (to) => {
 
   // 管理后台登录页
   if (to.path === '/admin/login') {
+    const userStore = useUserStore()
+    if (userStore.token && userStore.info) {
+      return { path: '/admin/dashboard' }
+    }
     return true
   }
 
@@ -119,6 +124,16 @@ router.beforeEach(async (to) => {
       } catch (e) {
         userStore.logout()
         return { path: '/admin/login' }
+      }
+    }
+    // 路由级权限矩阵：直接输入 URL 越权访问会被拦截（服务端接口仍有 @PreAuthorize 兜底）
+    const required = to.meta.perm
+    if (required) {
+      const list = Array.isArray(required) ? required : [required]
+      const allowed = list.some((perm) => userStore.hasPerm(perm))
+      if (!allowed) {
+        ElMessage.warning('没有访问该页面的权限')
+        return to.path === '/admin/dashboard' ? '/shop' : { path: '/admin/dashboard' }
       }
     }
     return true

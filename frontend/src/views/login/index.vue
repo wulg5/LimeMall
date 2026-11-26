@@ -45,13 +45,7 @@
           </el-button>
         </el-form>
 
-        <div class="demo-accounts">
-          <div class="demo-title">演示账号（密码均为 admin123，点击自动填入）</div>
-          <div v-for="account in demoAccounts" :key="account.username" class="demo-row" @click="fillAccount(account)">
-            <el-tag size="small" :type="account.tagType">{{ account.role }}</el-tag>
-            <span class="account-text">{{ account.username }}</span>
-          </div>
-        </div>
+
       </div>
     </div>
   </div>
@@ -73,22 +67,11 @@ const formRef = ref()
 const loading = ref(false)
 const needCaptcha = ref(false)
 const captchaImage = ref('')
-const form = reactive({ username: 'admin', password: 'admin123', captchaId: '', captchaCode: '' })
+const form = reactive({ username: '', password: '', captchaId: '', captchaCode: '' })
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
-
-const demoAccounts = [
-  { username: 'admin', role: '超级管理员', tagType: 'success' },
-  { username: 'yunying', role: '运营专员', tagType: 'primary' },
-  { username: 'kefu', role: '客服专员', tagType: 'warning' }
-]
-
-function fillAccount(account) {
-  form.username = account.username
-  form.password = 'admin123'
 }
 
 async function loadCaptcha() {

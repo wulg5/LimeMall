@@ -2,6 +2,8 @@ package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.limemall.common.PageResult;
 import com.limemall.entity.UmsMember;
 import com.limemall.entity.UmsPointsLog;
 import com.limemall.mapper.UmsMemberMapper;
@@ -119,5 +121,14 @@ public class PointsLedgerService {
             handled++;
         }
         return handled;
+    }
+
+    /** 会员积分明细（流水与批次，按时间倒序分页） */
+    public PageResult<UmsPointsLog> records(Long memberId, long pageNum, long pageSize) {
+        Page<UmsPointsLog> page = pointsLogMapper.selectPage(new Page<>(pageNum, pageSize),
+                new LambdaQueryWrapper<UmsPointsLog>()
+                        .eq(UmsPointsLog::getMemberId, memberId)
+                        .orderByDesc(UmsPointsLog::getId));
+        return PageResult.of(page, page.getRecords());
     }
 }

@@ -250,7 +250,17 @@ mysqldump -uroot -p --default-character-set=utf8mb4 lime_mall > /opt/limemall/ba
 
 ---
 
-## 七、可选：接入支付宝沙箱真实支付
+## 七、上线前安全清单（必读）
+
+- [ ] **修改全部演示口令**：admin/yunying/kefu/kefu2（个人中心改密）与会员 m001~m020；
+- [ ] 更换 `JWT_SECRET` 环境变量为随机 32+ 位字符串；
+- [ ] 生产建议关闭 Swagger：`SPRINGDOC_API_DOCS_ENABLED=false` / `SPRINGDOC_SWAGGER_UI_ENABLED=false`；
+- [ ] 为站点启用 HTTPS（证书 + 80→443 跳转；cloudflared 隧道天然 wss/https）；
+- [ ] 如前后端分域部署，配置 `CORS_ALLOWED_ORIGINS`（同源反代无需配置）；
+- [ ] 数据库账号最小权限、`/opt/limemall/uploads` 目录权限收敛；
+- [ ] 定期备份数据库（见第八节）。
+
+## 八、可选：接入支付宝沙箱真实支付
 
 **推荐方式：部署完成后登录管理端 → 系统管理 → 支付配置**，在页面上粘贴 APPID / 应用私钥 / 支付宝公钥并打开启用开关，保存立即生效（配置存于 `sys_config` 表，密钥仅脱敏展示）。
 

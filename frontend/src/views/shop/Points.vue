@@ -21,6 +21,9 @@
       </el-button>
     </div>
 
+    <el-tabs v-model="activeTab" class="points-tabs" @tab-change="handleTabChange">
+      <el-tab-pane label="兑换专区" name="exchange">
+
     <!-- 兑换列表 -->
     <div class="coupon-grid">
       <div v-for="coupon in coupons" :key="coupon.id" class="ex-card">
@@ -57,13 +60,55 @@
         <li>积分消费不影响会员等级；等级由成长值（消费金额累计）决定，只升不降。</li>
       </ul>
     </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="积分明细" name="records">
+        <div class="record-card">
+          <el-table v-loading="recordsLoading" :data="records">
+            <el-table-column prop="createTime" label="时间" width="170" />
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.type === 1 ? 'success' : row.type === 2 ? 'warning' : 'info'">
+                  {{ row.type === 1 ? '获取' : row.type === 2 ? '消费' : '过期' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="变动" width="110">
+              <template #default="{ row }">
+                <span :class="row.amount >= 0 ? 'plus' : 'minus'">
+                  {{ row.amount > 0 ? '+' : '' }}{{ row.amount }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="remark" label="说明" min-width="220" show-overflow-tooltip />
+            <el-table-column label="过期时间" width="170">
+              <template #default="{ row }">{{ row.type === 1 ? (row.expireTime || '-') : '-' }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <template v-if="row.type === 1">
+                  <el-tag :type="row.status === 1 ? 'info' : 'success'" size="small">
+                    {{ row.status === 1 ? '已过期/已用' : '有效' }}
+                  </el-tag>
+                </template>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="record-pager">
+            <el-pagination background layout="total, prev, pager, next" :total="recordsTotal"
+                           v-model:current-page="recordsPage" :page-size="10" @current-change="loadRecords" />
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { exchangeCoupon, getExchangeCoupons } from '@/api/portal'
+import { exchangeCoupon, getExchangeCoupons, getPointsRecords } from '@/api/portal'
 import { useShopStore } from '@/stores/shop'
 import LevelBadge from '@/components/LevelBadge.vue'
 
@@ -71,6 +116,11 @@ const shopStore = useShopStore()
 
 const coupons = ref([])
 const exchangingId = ref(null)
+const activeTab = ref('exchange')
+const records = ref([])
+const recordsTotal = ref(0)
+const recordsPage = ref(1)
+const recordsLoading = ref(false)
 
 onMounted(async () => {
   if (shopStore.token && !shopStore.info) {
@@ -81,7 +131,27 @@ onMounted(async () => {
     }
   }
   coupons.value = await getExchangeCoupons()
+  if (shopStore.token) {
+    await loadRecords()
+  }
 })
+
+function handleTabChange(name) {
+  if (name === 'records' && shopStore.token) {
+    loadRecords()
+  }
+}
+
+async function loadRecords() {
+  recordsLoading.value = true
+  try {
+    const data = await getPointsRecords({ pageNum: recordsPage.value, pageSize: 10 })
+    records.value = data.records
+    recordsTotal.value = data.total
+  } finally {
+    recordsLoading.value = false
+  }
+}
 
 async function handleExchange(coupon) {
   try {
@@ -253,6 +323,33 @@ async function handleExchange(coupon) {
   font-size: 12px;
   font-weight: 400;
   color: #9ca3af;
+}
+
+.points-tabs :deep(.el-tabs__header) {
+  margin-bottom: 14px;
+}
+
+.record-card {
+  background: #ffffff;
+  border: 1px solid #eef2f0;
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.record-card .plus {
+  color: #059669;
+  font-weight: 600;
+}
+
+.record-card .minus {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.record-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .rule-card {

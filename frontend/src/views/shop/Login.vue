@@ -51,7 +51,7 @@
       <div class="switch-row">
         <template v-if="!isRegister">
           还没有账号？<a @click="isRegister = true">立即注册</a>
-          <span class="demo-tip">演示账号：m001 / 123456</span>
+          
         </template>
         <template v-else>
           已有账号？<a @click="isRegister = false">去登录</a>

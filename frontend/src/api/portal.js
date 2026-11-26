@@ -117,6 +117,12 @@ export function refundOrder(id, data) {
   return request.post(`/portal/orders/${id}/refund`, data)
 }
 
+/* ---------------- 积分 ---------------- */
+
+export function getPointsRecords(params) {
+  return request.get('/portal/points/records', { params })
+}
+
 /* ---------------- 客服聊天 ---------------- */
 
 export function getChatCurrent() {
