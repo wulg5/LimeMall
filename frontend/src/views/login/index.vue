@@ -43,6 +43,7 @@
           <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
             登 录
           </el-button>
+          <div class="login-security-tip">连续失败 2 次将要求图形验证码，连续失败 5 次将锁定 10 分钟</div>
         </el-form>
 
 
@@ -249,6 +250,13 @@ async function handleLogin() {
   color: #9ca3af;
   font-size: 14px;
   margin: 0 0 32px;
+}
+
+.login-security-tip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
 }
 
 .login-btn {

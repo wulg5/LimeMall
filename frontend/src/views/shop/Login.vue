@@ -24,6 +24,7 @@
         <el-button type="primary" size="large" class="submit-btn" :loading="loading" @click="handleLogin">
           登 录
         </el-button>
+        <div class="login-security-tip">连续失败 2 次将要求图形验证码，连续失败 5 次将锁定 10 分钟</div>
       </el-form>
 
       <el-form v-else ref="registerFormRef" :model="registerForm" :rules="registerRules"
@@ -212,6 +213,13 @@ async function handleRegister() {
   cursor: pointer;
   border: 1px solid #e5e7eb;
   flex-shrink: 0;
+}
+
+.login-security-tip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
 }
 
 .submit-btn {
