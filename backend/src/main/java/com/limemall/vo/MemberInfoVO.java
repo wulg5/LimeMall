@@ -21,6 +21,12 @@ public class MemberInfoVO {
 
     private String phone;
 
+    /** 性别：0未知 1男 2女 */
+    private Integer gender;
+
+    /** 生日 */
+    private java.time.LocalDate birthday;
+
     /** 会员等级：1普通 2银卡 3金卡 4钻石 */
     private Integer level;
 

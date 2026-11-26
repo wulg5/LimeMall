@@ -22,6 +22,8 @@
           </div>
         </div>
         <div class="member-actions">
+          <el-button @click="openProfileEditor">编辑资料</el-button>
+          <el-button @click="openPasswordDialog">修改密码</el-button>
           <el-button @click="$router.push('/shop/points')">积分商城</el-button>
           <el-button @click="$router.push('/shop/orders')">我的订单</el-button>
           <el-button type="primary" @click="$router.push('/shop/coupons?tab=mine')">我的优惠券</el-button>
@@ -66,12 +68,61 @@
         </div>
       </div>
     </div>
+
+    <!-- 编辑资料 -->
+    <el-dialog v-model="profileVisible" title="编辑资料" width="440px" destroy-on-close>
+      <el-form ref="profileFormRef" :model="profileForm" :rules="profileRules" label-width="80px">
+        <el-form-item label="昵称" prop="nickname">
+          <el-input v-model="profileForm.nickname" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="性别">
+          <el-radio-group v-model="profileForm.gender">
+            <el-radio :value="0">保密</el-radio>
+            <el-radio :value="1">男</el-radio>
+            <el-radio :value="2">女</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="生日">
+          <el-date-picker v-model="profileForm.birthday" type="date" value-format="YYYY-MM-DD"
+                          placeholder="选择生日" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="手机号" prop="phone">
+          <el-input v-model="profileForm.phone" placeholder="用于联系与找回，可留空" maxlength="11" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="profileVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingProfile" @click="saveProfile">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 修改密码 -->
+    <el-dialog v-model="passwordVisible" title="修改密码" width="420px" destroy-on-close>
+      <el-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-width="90px">
+        <el-form-item label="原密码" prop="oldPassword">
+          <el-input v-model="passwordForm.oldPassword" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="6-32 位" />
+        </el-form-item>
+        <el-form-item label="确认新密码" prop="confirmPassword">
+          <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingPassword" @click="savePassword">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useShopStore } from '@/stores/shop'
+import { updateMemberPassword, updateMemberProfile } from '@/api/portal'
+import { encryptRequired } from '@/utils/crypto'
 import LevelBadge from '@/components/LevelBadge.vue'
 
 const shopStore = useShopStore()
@@ -110,6 +161,89 @@ onMounted(async () => {
     /* 拦截器处理 */
   }
 })
+
+/* ---------------- 编辑资料 ---------------- */
+const profileVisible = ref(false)
+const savingProfile = ref(false)
+const profileFormRef = ref()
+const profileForm = reactive({ nickname: '', gender: 0, birthday: null, phone: '' })
+const profileRules = {
+  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
+  phone: [{ pattern: /^$|^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }]
+}
+
+function openProfileEditor() {
+  const i = info.value
+  profileForm.nickname = i?.nickname || ''
+  profileForm.gender = i?.gender ?? 0
+  profileForm.birthday = i?.birthday || null
+  profileForm.phone = i?.phone || ''
+  profileVisible.value = true
+}
+
+async function saveProfile() {
+  await profileFormRef.value.validate()
+  savingProfile.value = true
+  try {
+    await updateMemberProfile({
+      nickname: profileForm.nickname,
+      gender: profileForm.gender,
+      birthday: profileForm.birthday || null,
+      phone: profileForm.phone || ''
+    })
+    await shopStore.fetchMe()
+    ElMessage.success('资料已更新')
+    profileVisible.value = false
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+/* ---------------- 修改密码 ---------------- */
+const passwordVisible = ref(false)
+const savingPassword = ref(false)
+const passwordFormRef = ref()
+const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const passwordRules = {
+  oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, max: 32, message: '密码长度为 6-32 位', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value !== passwordForm.newPassword) callback(new Error('两次输入的密码不一致'))
+        else callback()
+      },
+      trigger: 'blur'
+    }
+  ]
+}
+
+function openPasswordDialog() {
+  passwordForm.oldPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  passwordVisible.value = true
+}
+
+async function savePassword() {
+  await passwordFormRef.value.validate()
+  savingPassword.value = true
+  try {
+    const [oldCipher, newCipher] = await Promise.all([
+      encryptRequired(passwordForm.oldPassword),
+      encryptRequired(passwordForm.newPassword)
+    ])
+    await updateMemberPassword({ oldPassword: oldCipher, newPassword: newCipher, encrypted: true })
+    ElMessage.success('密码修改成功，下次登录请使用新密码')
+    passwordVisible.value = false
+  } finally {
+    savingPassword.value = false
+  }
+}
 </script>
 
 <style scoped>

@@ -2,6 +2,7 @@ package com.limemall.controller;
 
 import com.limemall.common.Result;
 import com.limemall.dto.ChangePasswordDTO;
+import com.limemall.dto.AdminProfileDTO;
 import com.limemall.dto.LoginDTO;
 import com.limemall.security.SecurityUtils;
 import com.limemall.service.AuthService;
@@ -51,6 +52,13 @@ public class AuthController {
     @Operation(summary = "修改当前管理员密码")
     public Result<Void> changePassword(@Valid @RequestBody ChangePasswordDTO dto) {
         authService.changePassword(SecurityUtils.getAdminId(), dto);
+        return Result.ok();
+    }
+
+    @PutMapping("/profile")
+    @Operation(summary = "编辑个人资料（昵称/头像/邮箱/电话）")
+    public Result<Void> updateProfile(@Valid @RequestBody AdminProfileDTO dto) {
+        authService.updateProfile(SecurityUtils.getAdminId(), dto);
         return Result.ok();
     }
 }

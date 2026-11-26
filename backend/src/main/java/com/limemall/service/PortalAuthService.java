@@ -2,10 +2,13 @@ package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.limemall.common.BusinessException;
+import com.limemall.dto.ChangePasswordDTO;
 import com.limemall.dto.LoginDTO;
+import com.limemall.dto.MemberProfileDTO;
 import com.limemall.dto.MemberRegisterDTO;
 import com.limemall.entity.UmsMember;
 import com.limemall.mapper.UmsMemberMapper;
+import com.limemall.common.Strings;
 import com.limemall.mapper.UmsPointsLogMapper;
 import com.limemall.security.JwtUtil;
 import com.limemall.security.LoginUser;
@@ -116,6 +119,57 @@ public class PortalAuthService {
         return new LoginVO(token, member.getUsername(), member.getNickname());
     }
 
+    /** 会员编辑个人资料（昵称/性别/生日/手机号改绑，手机号做唯一性校验） */
+    @org.springframework.transaction.annotation.Transactional
+    public void updateProfile(Long memberId, MemberProfileDTO dto) {
+        UmsMember member = memberMapper.selectById(memberId);
+        if (member == null) {
+            throw new BusinessException("会员不存在");
+        }
+        String phone = Strings.blankToNull(dto.getPhone());
+        if (phone != null) {
+            Long exists = memberMapper.selectCount(new LambdaQueryWrapper<UmsMember>()
+                    .eq(UmsMember::getPhone, phone)
+                    .ne(UmsMember::getId, memberId));
+            if (exists > 0) {
+                throw new BusinessException("该手机号已被其他账号绑定");
+            }
+        }
+        UmsMember update = new UmsMember();
+        update.setId(memberId);
+        if (StringUtils.hasText(dto.getNickname())) {
+            update.setNickname(dto.getNickname().trim());
+        }
+        update.setPhone(phone);
+        if (dto.getGender() != null) {
+            update.setGender(dto.getGender());
+        }
+        if (dto.getBirthday() != null) {
+            update.setBirthday(dto.getBirthday());
+        }
+        memberMapper.updateById(update);
+    }
+
+    /** 会员修改密码（新旧密码均强制加密传输） */
+    public void changePassword(Long memberId, ChangePasswordDTO dto) {
+        UmsMember member = memberMapper.selectById(memberId);
+        if (member == null) {
+            throw new BusinessException("会员不存在");
+        }
+        String oldRaw = cryptoService.requireDecrypted(dto.getOldPassword(), dto.getEncrypted());
+        String newRaw = cryptoService.requireDecrypted(dto.getNewPassword(), dto.getEncrypted());
+        if (newRaw.length() < 6 || newRaw.length() > 32) {
+            throw new BusinessException("新密码长度为 6-32 位");
+        }
+        if (!passwordEncoder.matches(oldRaw, member.getPassword())) {
+            throw new BusinessException("原密码不正确");
+        }
+        UmsMember update = new UmsMember();
+        update.setId(memberId);
+        update.setPassword(passwordEncoder.encode(newRaw));
+        memberMapper.updateById(update);
+    }
+
     /** 当前会员信息（含升级进度） */
     public MemberInfoVO me(Long memberId) {
         UmsMember member = memberMapper.selectById(memberId);
@@ -129,6 +183,8 @@ public class PortalAuthService {
         vo.setNickname(member.getNickname());
         vo.setAvatar(member.getAvatar());
         vo.setPhone(member.getPhone());
+        vo.setGender(member.getGender());
+        vo.setBirthday(member.getBirthday());
         vo.setLevel(member.getLevel());
         vo.setPoints(member.getPoints());
         int growth = member.getGrowth() == null ? 0 : member.getGrowth();

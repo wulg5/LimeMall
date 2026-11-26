@@ -18,6 +18,15 @@
             <span>可访问菜单</span>
             <b>{{ menuCount }}</b>
           </div>
+          <div class="info-row">
+            <span>邮箱</span>
+            <b>{{ userStore.info?.email || '未设置' }}</b>
+          </div>
+          <div class="info-row">
+            <span>手机号</span>
+            <b>{{ userStore.info?.phone || '未设置' }}</b>
+          </div>
+          <el-button class="edit-btn" type="primary" plain @click="openProfileEditor">编辑资料</el-button>
         </div>
       </el-col>
 
@@ -43,6 +52,31 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- 编辑资料弹窗 -->
+    <el-dialog v-model="profileVisible" title="编辑资料" width="460px" destroy-on-close>
+      <el-form ref="profileFormRef" :model="profileForm" :rules="profileRules" label-width="80px">
+        <el-form-item label="头像">
+          <el-upload :show-file-list="false" :http-request="uploadAvatar" accept="image/*">
+            <img v-if="profileForm.avatar" :src="profileForm.avatar" class="avatar-preview" alt="头像" />
+            <div v-else class="avatar-preview avatar-empty">点击上传</div>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="昵称" prop="nickname">
+          <el-input v-model="profileForm.nickname" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="profileForm.email" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="手机号" prop="phone">
+          <el-input v-model="profileForm.phone" placeholder="选填" maxlength="11" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="profileVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingProfile" @click="saveProfile">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -51,7 +85,8 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { updatePassword } from '@/api/auth'
+import { updatePassword, updateProfile } from '@/api/auth'
+import request from '@/utils/request'
 import { encryptRequired } from '@/utils/crypto'
 
 const router = useRouter()
@@ -60,6 +95,45 @@ const userStore = useUserStore()
 const formRef = ref()
 const saving = ref(false)
 const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+
+const profileVisible = ref(false)
+const savingProfile = ref(false)
+const profileFormRef = ref()
+const profileForm = reactive({ nickname: '', avatar: '', email: '', phone: '' })
+const profileRules = {
+  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
+  email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
+  phone: [{ pattern: /^$|^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }]
+}
+
+function openProfileEditor() {
+  profileForm.nickname = userStore.info?.nickname || ''
+  profileForm.avatar = userStore.info?.avatar || ''
+  profileForm.email = userStore.info?.email || ''
+  profileForm.phone = userStore.info?.phone || ''
+  profileVisible.value = true
+}
+
+async function uploadAvatar(options) {
+  const data = new FormData()
+  data.append('file', options.file)
+  profileForm.avatar = await request.post('/admin/upload/avatar', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+async function saveProfile() {
+  await profileFormRef.value.validate()
+  savingProfile.value = true
+  try {
+    await updateProfile({ ...profileForm })
+    await userStore.fetchInfo()
+    ElMessage.success('资料已更新')
+    profileVisible.value = false
+  } finally {
+    savingProfile.value = false
+  }
+}
 
 const menuCount = computed(() => {
   const count = (nodes) => nodes.reduce(
@@ -134,6 +208,29 @@ async function handleSave() {
   padding: 10px 28px;
   color: #6b7280;
   font-size: 14px;
+}
+
+.edit-btn {
+  margin-top: 14px;
+  width: 160px;
+}
+
+.avatar-preview {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+}
+
+.avatar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 12px;
+  background: #f9fafb;
 }
 
 .info-row b {

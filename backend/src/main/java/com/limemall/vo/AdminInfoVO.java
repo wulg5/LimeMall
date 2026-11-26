@@ -19,6 +19,10 @@ public class AdminInfoVO {
 
     private String avatar;
 
+    private String email;
+
+    private String phone;
+
     /** 角色名称列表 */
     private List<String> roles;
 

@@ -40,6 +40,13 @@ public class UploadController {
     @Value("${limemall.upload-dir}")
     private String uploadDir;
 
+    @PostMapping("/avatar")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "上传头像（当前登录管理员）")
+    public Result<String> uploadAvatar(@RequestParam("file") MultipartFile file) throws IOException {
+        return uploadImage(file);
+    }
+
     @PostMapping("/image")
     @PreAuthorize("hasAnyAuthority('pms:product:create', 'pms:product:update', 'pms:brand:create', 'pms:brand:update')")
     @Operation(summary = "上传图片（返回访问URL）")

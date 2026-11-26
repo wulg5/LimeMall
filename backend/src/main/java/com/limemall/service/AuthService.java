@@ -91,6 +91,8 @@ public class AuthService {
         vo.setUsername(admin.getUsername());
         vo.setNickname(admin.getNickname());
         vo.setAvatar(admin.getAvatar());
+        vo.setEmail(admin.getEmail());
+        vo.setPhone(admin.getPhone());
         vo.setRoles(roles.stream().map(UmsRole::getName).toList());
         vo.setPerms(menus.stream()
                 .map(UmsMenu::getPerm)
@@ -101,9 +103,23 @@ public class AuthService {
         return vo;
     }
 
-    /**
-     * 修改当前管理员密码：校验原密码后更新。
-     */
+    /** 管理员编辑个人资料（昵称/头像/邮箱/电话；账号与角色不可自改） */
+    @org.springframework.transaction.annotation.Transactional
+    public void updateProfile(Long adminId, com.limemall.dto.AdminProfileDTO dto) {
+        UmsAdmin admin = adminMapper.selectById(adminId);
+        if (admin == null) {
+            throw new BusinessException("账号不存在");
+        }
+        UmsAdmin update = new UmsAdmin();
+        update.setId(adminId);
+        update.setNickname(dto.getNickname().trim());
+        update.setAvatar(com.limemall.common.Strings.blankToNull(dto.getAvatar()));
+        update.setEmail(com.limemall.common.Strings.blankToNull(dto.getEmail()));
+        update.setPhone(com.limemall.common.Strings.blankToNull(dto.getPhone()));
+        adminMapper.updateById(update);
+    }
+
+    /** 修改当前管理员密码：校验原密码后更新 */
     public void changePassword(Long adminId, ChangePasswordDTO dto) {
         UmsAdmin admin = adminMapper.selectById(adminId);
         if (admin == null) {

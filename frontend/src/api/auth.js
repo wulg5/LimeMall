@@ -10,6 +10,11 @@ export function getInfo() {
   return request.get('/admin/auth/info')
 }
 
+/** 编辑个人资料 */
+export function updateProfile(data) {
+  return request.put('/admin/auth/profile', data)
+}
+
 /** 退出登录 */
 export function logout() {
   return request.post('/admin/auth/logout')

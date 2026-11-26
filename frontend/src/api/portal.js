@@ -117,6 +117,16 @@ export function refundOrder(id, data) {
   return request.post(`/portal/orders/${id}/refund`, data)
 }
 
+/* ---------------- 个人中心 ---------------- */
+
+export function updateMemberProfile(data) {
+  return request.put('/portal/member/profile', data)
+}
+
+export function updateMemberPassword(data) {
+  return request.put('/portal/member/password', data)
+}
+
 /* ---------------- 积分 ---------------- */
 
 export function getPointsRecords(params) {
