@@ -221,11 +221,11 @@ sudo firewall-cmd --reload
 
 ## 四、验证
 
-1. 浏览器访问 `http://YOUR_SERVER_IP/` → 商城前台主站；`http://YOUR_SERVER_IP/admin/login` → 后台管理（admin / admin123）
-2. 前台会员登录（m001 / 123456 或现场注册），验证下单、客服聊天、会员中心
+1. 浏览器访问 `http://YOUR_SERVER_IP/` → 商城前台主站；`http://YOUR_SERVER_IP/admin/login` → 后台管理（演示口令见项目 README，**部署前必须更换**）
+2. 前台会员登录（演示会员见 README，或现场注册），验证下单、客服聊天、会员中心
 3. 健康检查：`curl http://127.0.0.1:18080/health` 返回 `"status":"UP","db":"UP"`（也可经域名访问检验反代链路）
-3. 后台改一张商品图 → 前台可见（验证上传目录与 /uploads 映射）
-4. 前台下单 → 后台看板与订单列表实时出现新订单
+4. 后台改一张商品图 → 前台可见（验证上传目录与 /uploads 映射）
+5. 前台下单 → 后台看板与订单列表实时出现新订单
 
 ## 五、常见问题
 
