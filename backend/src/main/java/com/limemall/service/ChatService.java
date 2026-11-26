@@ -14,6 +14,7 @@ import com.limemall.mapper.UmsChatMessageMapper;
 import com.limemall.mapper.UmsChatSessionMapper;
 import com.limemall.mapper.UmsMemberMapper;
 import com.limemall.vo.ChatSessionVO;
+import com.limemall.websocket.ChatWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +53,7 @@ public class ChatService {
     private final UmsChatMessageMapper messageMapper;
     private final UmsMemberMapper memberMapper;
     private final UmsAdminMapper adminMapper;
+    private final ChatWebSocketHandler realtime;
 
     // ==================================================================
     // 会员端
@@ -84,6 +86,7 @@ public class ChatService {
             sessionMapper.insert(session);
         }
         insertMessage(session.getId(), memberId, null, FROM_MEMBER, text);
+        realtime.notifyAdmins();
     }
 
     // ==================================================================
@@ -178,6 +181,8 @@ public class ChatService {
         if (affected == 0) {
             throw new BusinessException("该会话已被其他客服接入");
         }
+        realtime.notifyAdmins();
+        realtime.notifyMember(session.getMemberId());
     }
 
     /** 结束会话：仅接待客服本人可操作（条件更新防并发） */
@@ -199,6 +204,8 @@ public class ChatService {
         if (affected == 0) {
             throw new BusinessException("会话状态已变更，请刷新后重试");
         }
+        realtime.notifyAdmins();
+        realtime.notifyMember(session.getMemberId());
     }
 
     /** 客服回复：仅该会话的接待客服本人（一对一分派） */
@@ -216,6 +223,7 @@ public class ChatService {
             throw new BusinessException("仅该会话的接待客服可回复");
         }
         insertMessage(sessionId, session.getMemberId(), adminId, FROM_ADMIN, text);
+        realtime.notifyMember(session.getMemberId());
     }
 
     // ==================================================================

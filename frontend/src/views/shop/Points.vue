@@ -10,6 +10,9 @@
       <div v-if="shopStore.token" class="balance-card">
         <div class="b-label">我的积分</div>
         <div class="b-value">{{ shopStore.info?.points ?? 0 }}</div>
+        <div v-if="shopStore.info?.expiringPoints > 0" class="b-expire">
+          {{ shopStore.info.expiringPoints }} 分将于 {{ shopStore.info.expiringDate || '近期' }} 过期
+        </div>
         <level-badge :level="shopStore.info?.level || 1" />
       </div>
       <el-button v-else type="primary"
@@ -150,6 +153,12 @@ async function handleExchange(coupon) {
 .b-label {
   font-size: 12px;
   opacity: 0.85;
+}
+
+.b-expire {
+  font-size: 11px;
+  color: #fde68a;
+  margin-bottom: 4px;
 }
 
 .b-value {

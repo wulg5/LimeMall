@@ -112,6 +112,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { chatClaim, chatEnd, chatHistory, chatMine, chatQueue, chatReply, chatSessionMessages } from '@/api/chat'
+import { connectChatSocket, disconnectChatSocket } from '@/utils/chatSocket'
 import LevelBadge from '@/components/LevelBadge.vue'
 
 const userStore = useUserStore()
@@ -157,11 +158,19 @@ const formatTime = (time) => (time ? dayjs(time).format('MM-DD HH:mm') : '')
 
 onMounted(async () => {
   await refreshLists()
-  pollTimer = setInterval(refresh, 5000)
+  // 实时通道：收到 CHAT_UPDATE 立即刷新列表与当前会话；15 秒轮询兜底
+  connectChatSocket(userStore.token, async () => {
+    await refreshLists()
+    if (active.value) {
+      await loadMessages()
+    }
+  })
+  pollTimer = setInterval(refresh, 15000)
 })
 
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
+  disconnectChatSocket()
 })
 
 async function refreshLists() {

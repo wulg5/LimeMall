@@ -50,6 +50,7 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Close, Service } from '@element-plus/icons-vue'
 import { getChatCurrent, sendChatMessage } from '@/api/portal'
+import { connectChatSocket, disconnectChatSocket } from '@/utils/chatSocket'
 import { useShopStore } from '@/stores/shop'
 
 const route = useRoute()
@@ -81,9 +82,12 @@ function togglePanel() {
   visible.value = !visible.value
   if (visible.value) {
     loadMessages()
+    // 实时通道：服务端推送变更事件即刷新；同时保留低频轮询兜底
+    connectChatSocket(shopStore.token, () => loadMessages())
     startPoll()
   } else {
     stopPoll()
+    disconnectChatSocket()
   }
 }
 
@@ -121,8 +125,8 @@ async function handleSend() {
 
 function startPoll() {
   stopPoll()
-  // 轮询拉取客服回复（5 秒），课设环境下无 WebSocket 依赖、Nginx 下零配置
-  pollTimer = setInterval(loadMessages, 5000)
+  // 低频轮询兜底（WS 不可用时代替实时推送）
+  pollTimer = setInterval(loadMessages, 15000)
 }
 
 function stopPoll() {
@@ -132,7 +136,10 @@ function stopPoll() {
   }
 }
 
-onBeforeUnmount(stopPoll)
+onBeforeUnmount(() => {
+  stopPoll()
+  disconnectChatSocket()
+})
 </script>
 
 <style scoped>

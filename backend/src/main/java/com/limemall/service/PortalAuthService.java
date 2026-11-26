@@ -6,6 +6,7 @@ import com.limemall.dto.LoginDTO;
 import com.limemall.dto.MemberRegisterDTO;
 import com.limemall.entity.UmsMember;
 import com.limemall.mapper.UmsMemberMapper;
+import com.limemall.mapper.UmsPointsLogMapper;
 import com.limemall.security.JwtUtil;
 import com.limemall.security.LoginUser;
 import com.limemall.util.MemberLevels;
@@ -26,6 +27,7 @@ import java.time.LocalDateTime;
 public class PortalAuthService {
 
     private final UmsMemberMapper memberMapper;
+    private final UmsPointsLogMapper pointsLogMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final LoginAttemptService loginAttemptService;
@@ -132,6 +134,13 @@ public class PortalAuthService {
         int growth = member.getGrowth() == null ? 0 : member.getGrowth();
         vo.setGrowth(growth);
         vo.setNextLevelGrowth(MemberLevels.nextLevelGrowth(growth));
+        // 未来 30 天内将过期的积分提醒（积分 12 个月滚动过期机制的可见性）
+        Integer expiring = pointsLogMapper.sumExpiringWithin(memberId, 30);
+        vo.setExpiringPoints(expiring == null ? 0 : expiring);
+        if (expiring != null && expiring > 0) {
+            java.time.LocalDateTime earliest = pointsLogMapper.earliestExpireWithin(memberId, 30);
+            vo.setExpiringDate(earliest == null ? null : earliest.toLocalDate());
+        }
         return vo;
     }
 }

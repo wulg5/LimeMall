@@ -34,6 +34,11 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
         }
+      },
+      '/ws': {
+        target: 'ws://127.0.0.1:18080',
+        ws: true,
+        changeOrigin: true
       }
     }
   }

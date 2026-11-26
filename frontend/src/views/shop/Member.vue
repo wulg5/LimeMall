@@ -28,6 +28,11 @@
         </div>
       </div>
 
+      <div v-if="info.expiringPoints > 0" class="expire-tip">
+        <span class="dot"></span>
+        有 {{ info.expiringPoints }} 积分将于 {{ info.expiringDate || '近期' }} 过期，快去积分商城兑换吧
+        <el-button link type="warning" @click="$router.push('/shop/points')">去兑换 &gt;</el-button>
+      </div>
       <div class="progress-block">
         <div class="progress-label">
           <template v-if="info.nextLevelGrowth">
@@ -172,6 +177,28 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.expire-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: #b45309;
+}
+
+.expire-tip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex-shrink: 0;
 }
 
 .progress-block {

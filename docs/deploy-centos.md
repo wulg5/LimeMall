@@ -188,6 +188,15 @@ server {
     location /uploads/ {
         alias /opt/limemall/uploads/;
     }
+
+    # 客服 WebSocket 实时通道（协议升级头；令牌走查询参数，由后端握手鉴权）
+    location /ws/ {
+        proxy_pass http://127.0.0.1:18080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
 }
 ```
 
@@ -214,6 +223,7 @@ sudo firewall-cmd --reload
 
 1. 浏览器访问 `http://YOUR_SERVER_IP/` → 商城前台主站；`http://YOUR_SERVER_IP/admin/login` → 后台管理（admin / admin123）
 2. 前台会员登录（m001 / 123456 或现场注册），验证下单、客服聊天、会员中心
+3. 健康检查：`curl http://127.0.0.1:18080/health` 返回 `"status":"UP","db":"UP"`（也可经域名访问检验反代链路）
 3. 后台改一张商品图 → 前台可见（验证上传目录与 /uploads 映射）
 4. 前台下单 → 后台看板与订单列表实时出现新订单
 

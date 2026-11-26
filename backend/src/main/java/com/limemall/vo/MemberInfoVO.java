@@ -32,4 +32,10 @@ public class MemberInfoVO {
 
     /** 升级到下一等级所需成长值（钻石会员为 null） */
     private Integer nextLevelGrowth;
+
+    /** 未来 30 天内将过期的积分（无则为 0，前端提示"即将过期"） */
+    private Integer expiringPoints;
+
+    /** 最近一批积分的过期日期（伴随 expiringPoints 展示） */
+    private java.time.LocalDate expiringDate;
 }

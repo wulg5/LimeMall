@@ -51,8 +51,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 认证接口与静态资源
                         .requestMatchers("/admin/auth/login", "/portal/auth/login", "/portal/auth/register",
-                        "/auth/public-key", "/auth/captcha", "/portal/pay/alipay/notify").permitAll()
-                        .requestMatchers("/portal/public/**", "/uploads/**").permitAll()
+                        "/auth/public-key", "/auth/captcha", "/health", "/portal/pay/alipay/notify").permitAll()
+                        .requestMatchers("/portal/public/**", "/uploads/**", "/ws/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/favicon.ico").permitAll()
                         // 业务接口按角色隔离
                         .requestMatchers("/admin/**").hasRole("ADMIN")
