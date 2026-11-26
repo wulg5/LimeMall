@@ -77,7 +77,7 @@ public class AlipayService {
                 gatewayUrl, notifyUrl, returnUrl, mode);
     }
 
-    /** 支付是否可用（下单支付入口据此分流：真实沙箱 / 模拟支付） */
+    /** 支付是否可用（未配置时前台发起支付将明确报错，不提供模拟入账） */
     public boolean isEnabled() {
         return resolve().enabled();
     }

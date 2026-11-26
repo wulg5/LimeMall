@@ -168,16 +168,18 @@ function openDetail(order) {
 async function handlePay(order) {
   try {
     await ElMessageBox.confirm(`确认支付 ${money(order.payAmount)} 吗？`, '订单支付', { type: 'info' })
+  } catch (e) {
+    return // 用户取消
+  }
+  // 失败（如"支付功能尚未配置"）由全局拦截器提示；成功则跳转支付宝收银台
+  try {
     const result = await payOrder(order.id)
     if (result && result.payUrl) {
       ElMessage.success('正在跳转支付宝收银台...')
       window.location.href = result.payUrl
-      return
     }
-    ElMessage.success('支付成功，等待商家发货')
-    load()
   } catch (e) {
-    /* 取消 */
+    /* 错误提示已由全局拦截器给出 */
   }
 }
 

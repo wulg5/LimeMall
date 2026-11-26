@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 支付宝配置（环境变量注入）。
- * app-id / merchant-private-key / alipay-public-key 三项齐全时启用真实支付，否则回退模拟支付。
+ * app-id / merchant-private-key / alipay-public-key 三项齐全时启用真实支付；未配置时前台支付明确报错。
  */
 @Data
 @Component

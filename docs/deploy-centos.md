@@ -282,5 +282,5 @@ systemctl daemon-reload && systemctl restart limemall-backend
 注意事项：
 - `ALIPAY_NOTIFY_URL` 必须公网可访问（本系统 Nginx 已将 `/api/` 反代到后端，直接使用 https 域名即可）；
 - 沙箱买家账号在开放平台「沙箱账号」页面获取，付款后异步通知通常数秒内到达；
-- 未配置以上变量时，前台支付自动回退为模拟支付（本地演示不受影响）；
+- 未配置支付渠道时，前台点「去支付」会提示『支付功能尚未配置』（系统不提供模拟入账，符合生产语义）；
 - 验签失败或金额不符的回调一律拒绝并记录日志（可在 `journalctl -u limemall-backend` 查看）。

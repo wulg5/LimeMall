@@ -8,7 +8,7 @@
       <!-- 当前生效状态 -->
       <el-alert v-if="config" :type="config.enabled ? 'success' : 'info'" :closable="false" class="status-alert">
         <template #title>
-          当前状态：{{ config.enabled ? '已启用支付宝沙箱支付' : '未启用（前台支付回退为模拟支付）' }}
+          当前状态：{{ config.enabled ? '已启用支付宝沙箱支付' : '未启用（前台发起支付将提示未配置）' }}
           <span class="mode-tag">
             配置来源：{{ modeText }}
           </span>

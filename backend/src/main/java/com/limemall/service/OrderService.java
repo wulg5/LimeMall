@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
  *
  * 覆盖两端能力：
  * - 管理员端：分页查询、详情、发货、关闭订单；
- * - 商城前台：下单（库存条件扣减防超卖 + 优惠券核销）、模拟支付、取消、确认收货、我的订单。
+ * - 商城前台：下单（库存条件扣减防超卖 + 优惠券核销）、发起支付宝支付、取消、确认收货、我的订单。
  *
  * 订单状态机：0待付款 → 1待发货 → 2已发货 → 3已完成；0/1 → 4已关闭。
  * 关闭/退款时在同一事务内回补 SKU/SPU 库存、回退销量并恢复优惠券。
@@ -344,23 +344,19 @@ public class OrderService {
     }
 
     /**
-     * 发起支付：
-     * - 已配置支付宝（沙箱）密钥时，返回收银台跳转 URL，等待异步通知入账；
-     * - 未配置时走模拟支付，直接入账（本地演示默认路径）。
+     * 发起支付：返回支付宝收银台跳转 URL。
+     * 生产语义：未配置支付渠道时明确报错，**绝不**以模拟入账代替真实支付。
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public Map<String, Object> pay(Long memberId, Long id) {
         OmsOrder order = getMemberOrder(memberId, id);
         if (order.getStatus() != STATUS_UNPAID) {
             throw new BusinessException("当前订单状态不可支付");
         }
-        if (alipayService.isEnabled()) {
-            return Map.of("payUrl", alipayService.buildPagePayUrl(order), "simulated", false);
+        if (!alipayService.isEnabled()) {
+            throw new BusinessException("支付功能尚未配置，请联系管理员");
         }
-        if (!markPaid(order)) {
-            throw new BusinessException("订单状态已变更，请刷新后重试");
-        }
-        return Map.of("simulated", true);
+        return Map.of("payUrl", alipayService.buildPagePayUrl(order));
     }
 
     /**

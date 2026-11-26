@@ -57,7 +57,7 @@ public class PortalOrderController {
     }
 
     @PostMapping("/{id}/pay")
-    @Operation(summary = "发起支付（沙箱返回 payUrl；未配置时模拟支付直接成功）")
+    @Operation(summary = "发起支付（返回收银台链接；未配置支付渠道时返回错误）")
     public Result<Map<String, Object>> pay(@PathVariable Long id) {
         return Result.ok(orderService.pay(SecurityUtils.getMemberId(), id));
     }
