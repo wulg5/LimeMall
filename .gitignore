@@ -19,3 +19,8 @@ Thumbs.db
 
 # 本机环境覆盖（含本机路径，不入库）
 setenv.local.bat
+
+# 数据库备份/导出（防止把含真实配置的数据文件提交到仓库）
+backup_*.sql
+*dump*.sql
+*.heapsnapshot
