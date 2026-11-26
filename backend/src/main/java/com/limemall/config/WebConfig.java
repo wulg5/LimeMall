@@ -87,8 +87,12 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        String location = uploadDir.endsWith("/") ? uploadDir : uploadDir + "/";
+        // 相对路径统一解析为基于启动工作目录的绝对 URI，避免 file: 相对位置歧义
+        String location = java.nio.file.Paths.get(uploadDir).toAbsolutePath().normalize().toUri().toString();
+        if (!location.endsWith("/")) {
+            location += "/";
+        }
         registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:" + location);
+                .addResourceLocations(location);
     }
 }

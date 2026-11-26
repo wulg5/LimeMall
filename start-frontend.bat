@@ -14,5 +14,6 @@ if not exist node_modules (
 echo [青柠商城] 启动前端开发服务器（http://localhost:5173）...
 start "LimeMall-Frontend" cmd /c "npm run dev"
 echo 前端已在新窗口启动。
-echo   后台管理：http://localhost:5173/login   （admin / admin123）
-echo   商城前台：http://localhost:5173/shop    （m001 / 123456）
+echo   后台管理：http://localhost:5173/admin/login
+echo   商城前台：http://localhost:5173/shop
+echo   演示账号见 README（部署公网前请务必修改）

@@ -68,7 +68,7 @@ sudo systemctl enable --now nginx
 
 ```bash
 cd backend
-set JAVA_HOME=D:\program\Java\jdk-21
+set JAVA_HOME=C:\path	o\jdk-21
 mvn -s maven-settings.xml -DskipTests package
 ```
 

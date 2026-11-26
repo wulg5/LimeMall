@@ -79,10 +79,12 @@ mall-course-design/
    ```bash
    start-backend.bat
    ```
+   > 脚本依赖环境变量 `JAVA_HOME` 指向 JDK 17+；
+   > 也可在项目根目录创建 `setenv.local.bat`（已被 .gitignore 忽略）写入 `set JAVA_HOME=你的JDK路径`，实现本机配置与仓库隔离。
    或手动：
    ```bash
    cd backend
-   set JAVA_HOME=D:\program\Java\jdk-21
+   set JAVA_HOME=C:\path	o\jdk-21
    mvn -s maven-settings.xml -DskipTests package
    "%JAVA_HOME%\bin\java" -jar target/limemall-backend.jar
    ```

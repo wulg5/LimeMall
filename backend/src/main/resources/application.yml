@@ -34,7 +34,7 @@ limemall:
     secret: ${JWT_SECRET:LimeMall-Course-Design-2026-JWT-Secret-Key-LimeGreen}
     expire-hours: 24
   # 上传文件保存目录（生产环境通过 LIME_UPLOAD_DIR 指定，如 /opt/limemall/uploads）
-  upload-dir: ${LIME_UPLOAD_DIR:D:/mall-course-design/uploads}
+  upload-dir: ${LIME_UPLOAD_DIR:uploads}
   order:
     # 未支付订单自动关闭时限（分钟）：定时任务每分钟扫描，超时自动关单并回补库存
     pay-timeout-minutes: ${ORDER_PAY_TIMEOUT_MINUTES:30}

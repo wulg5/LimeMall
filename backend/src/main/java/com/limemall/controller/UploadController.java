@@ -67,7 +67,8 @@ public class UploadController {
             throw new BusinessException("仅支持 png/jpg/jpeg/gif/webp 格式");
         }
         String filename = UUID.randomUUID().toString().replace("-", "") + extension;
-        Path directory = Paths.get(uploadDir);
+        // 关键：相对配置（如 uploads）必须先绝对化——Tomcat 的 transferTo 会把相对 File 解析到其临时工作目录
+        Path directory = Paths.get(uploadDir).toAbsolutePath().normalize();
         Files.createDirectories(directory);
         file.transferTo(directory.resolve(filename).toFile());
         return Result.ok("/uploads/" + filename);
