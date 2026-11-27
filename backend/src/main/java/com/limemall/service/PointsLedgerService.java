@@ -40,6 +40,7 @@ public class PointsLedgerService {
         UmsPointsLog batch = new UmsPointsLog();
         batch.setMemberId(order.getMemberId());
         batch.setAmount(points);
+        batch.setEarnedAmount(points);
         batch.setType(1);
         batch.setRemark(orderAwardRemark(order));
         batch.setStatus(0);

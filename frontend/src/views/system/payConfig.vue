@@ -18,7 +18,7 @@
       <el-form v-if="config" ref="formRef" :model="form" label-width="120px" class="pay-form">
         <el-form-item label="启用支付">
           <el-switch v-model="form.enabled" active-text="启用" inactive-text="停用" inline-prompt />
-          <span class="form-tip">启用且密钥齐全时，前台「去支付」跳转支付宝沙箱收银台</span>
+          <span class="form-tip">启用支付需要完整密钥和公网可访问的异步通知地址</span>
         </el-form-item>
 
         <el-form-item label="APPID">

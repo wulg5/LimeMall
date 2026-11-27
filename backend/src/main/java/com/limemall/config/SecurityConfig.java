@@ -6,6 +6,7 @@ import com.limemall.security.RestAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -52,6 +53,7 @@ public class SecurityConfig {
                         // 认证接口与静态资源
                         .requestMatchers("/admin/auth/login", "/portal/auth/login", "/portal/auth/register",
                         "/auth/public-key", "/auth/captcha", "/health", "/portal/pay/alipay/notify").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/portal/coupons/exchange").permitAll()
                         .requestMatchers("/portal/public/**", "/uploads/**", "/ws/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/favicon.ico").permitAll()
                         // 业务接口按角色隔离

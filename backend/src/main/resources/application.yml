@@ -7,9 +7,9 @@ spring:
     name: limemall-backend
   task:
     scheduling:
-      # 退款网关可能较慢，给超时关单留出独立调度线程。
+      # 退款和查单可能等待网关，保留超时关单的独立调度线程。
       pool:
-        size: 2
+        size: 3
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 支持环境变量覆盖：MYSQL_HOST / MYSQL_PORT / MYSQL_DB / MYSQL_USER / MYSQL_PASSWORD
@@ -50,7 +50,7 @@ limemall:
     alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
     gateway-url: ${ALIPAY_GATEWAY:https://openapi-sandbox.dl.alipaydev.com/gateway.do}
     notify-url: ${ALIPAY_NOTIFY_URL:}
-    return-url: ${ALIPAY_RETURN_URL:http://localhost:5173/shop/orders}
+    return-url: ${ALIPAY_RETURN_URL:http://127.0.0.1:5173/shop/orders}
 
 springdoc:
   api-docs:

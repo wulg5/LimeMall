@@ -113,7 +113,7 @@
         </el-form-item>
         <el-form-item label="积分兑换价">
           <el-input-number v-model="form.pointsPrice" :min="0" :step="100" style="width: 180px" />
-          <span class="form-tip">0 表示不参与积分兑换（建议按 100 积分 = 1 元面额设置）</span>
+          <span class="form-tip">0 表示免费领取。大于 0 时仅限积分兑换</span>
         </el-form-item>
         <el-form-item label="有效期" prop="timeRange">
           <el-date-picker v-model="form.timeRange" type="datetimerange" range-separator="至"

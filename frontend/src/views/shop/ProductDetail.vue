@@ -112,7 +112,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ShoppingCart } from '@element-plus/icons-vue'
@@ -148,23 +148,49 @@ const maxQuantity = computed(() =>
   Math.max(1, selectedSku.value ? selectedSku.value.stock : 1)
 )
 
-onMounted(async () => {
-  detail.value = await getProductDetail(route.params.id)
-  currentPic.value = detail.value.mainPic
-  // 默认选中第一个有库存的 SKU
-  const skus = detail.value.skus || []
-  const first = skus.find((sku) => sku.stock > 0) || skus[0]
-  selectedSkuId.value = first ? first.id : null
-  loadComments()
-})
+let latestCommentRequest = 0
+
+watch([() => route.params.id, () => route.query.skuId], async ([id, skuId], _, onCleanup) => {
+  if (!id) return
+  let active = true
+  onCleanup(() => { active = false })
+  detail.value = null
+  selectedSkuId.value = null
+  quantity.value = 1
+  comments.value = []
+  commentTotal.value = 0
+  commentPage.value = 1
+  latestCommentRequest++
+  try {
+    const product = await getProductDetail(id)
+    if (!active) return
+    detail.value = product
+    currentPic.value = product.mainPic
+    const skus = product.skus || []
+    const selected = skus.find((sku) => String(sku.id) === skuId)
+      || skus.find((sku) => sku.stock > 0) || skus[0]
+    selectedSkuId.value = selected?.id ?? null
+    loadComments()
+  } catch {
+    // 请求错误由拦截器提示。
+  }
+}, { immediate: true })
 
 async function loadComments() {
-  const data = await getProductComments(route.params.id, {
-    pageNum: commentPage.value,
-    pageSize: commentPageSize
-  })
-  comments.value = data.records
-  commentTotal.value = data.total
+  const request = ++latestCommentRequest
+  const id = route.params.id
+  try {
+    const data = await getProductComments(id, {
+      pageNum: commentPage.value,
+      pageSize: commentPageSize
+    })
+    if (request === latestCommentRequest && id === route.params.id) {
+      comments.value = data.records
+      commentTotal.value = data.total
+    }
+  } catch {
+    // 请求错误由拦截器提示。
+  }
 }
 
 function selectSku(sku) {

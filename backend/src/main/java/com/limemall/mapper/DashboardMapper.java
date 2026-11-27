@@ -82,14 +82,15 @@ public interface DashboardMapper {
      * 热销商品排行（按销量，已支付订单）。
      */
     @Select("""
-            SELECT oi.product_name AS name,
+            SELECT COALESCE(p.name, MAX(oi.product_name)) AS name,
                    SUM(oi.quantity) AS quantity,
                    SUM(oi.item_amount) AS amount
             FROM oms_order_item oi
             INNER JOIN oms_order o ON o.id = oi.order_id
+            LEFT JOIN pms_product p ON p.id = oi.product_id
             WHERE o.status IN (1,2,3)
-            GROUP BY oi.product_id, oi.product_name
-            ORDER BY quantity DESC
+            GROUP BY oi.product_id, p.name
+            ORDER BY quantity DESC, oi.product_id
             LIMIT #{limit}
             """)
     List<TopProductVO> selectTopProducts(@Param("limit") int limit);

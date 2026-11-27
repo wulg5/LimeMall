@@ -182,6 +182,7 @@ async function loadDetail() {
     specsText: specsToText(sku.specs),
     price: Number(sku.price),
     stock: sku.stock,
+    originalStock: sku.stock,
     pic: sku.pic
   }))
   // 回显分类路径：在树中查找该二级分类的父级
@@ -224,6 +225,10 @@ async function handleSave() {
       ElMessage.warning('请填写每个 SKU 的价格')
       return
     }
+    if (!Number.isInteger(sku.stock) || sku.stock < 0) {
+      ElMessage.warning('请填写每个 SKU 的有效库存')
+      return
+    }
   }
   saving.value = true
   try {
@@ -244,7 +249,8 @@ async function handleSave() {
         skuCode: sku.skuCode || null,
         specs: textToSpecs(sku.specsText),
         price: sku.price,
-        stock: sku.stock,
+        stock: !sku.id || sku.stock !== sku.originalStock ? sku.stock : undefined,
+        expectedStock: sku.id && sku.stock !== sku.originalStock ? sku.originalStock : undefined,
         pic: sku.pic
       }))
     }

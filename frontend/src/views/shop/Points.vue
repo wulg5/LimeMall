@@ -75,10 +75,12 @@
             </el-table-column>
             <el-table-column label="变动" width="110">
               <template #default="{ row }">
-                <span :class="row.amount >= 0 ? 'plus' : 'minus'">
-                  {{ row.amount > 0 ? '+' : '' }}{{ row.amount }}
-                </span>
+                <span v-if="row.type === 1" class="plus">{{ row.earnedAmount != null ? `+${row.earnedAmount}` : '—' }}</span>
+                <span v-else class="minus">{{ row.amount }}</span>
               </template>
+            </el-table-column>
+            <el-table-column label="批次剩余" width="110">
+              <template #default="{ row }">{{ row.type === 1 ? row.amount : '—' }}</template>
             </el-table-column>
             <el-table-column prop="remark" label="说明" min-width="220" show-overflow-tooltip />
             <el-table-column label="过期时间" width="170">

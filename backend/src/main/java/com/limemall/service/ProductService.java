@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -190,10 +191,7 @@ public class ProductService {
         product.setStock(calcTotalStock(dto));
         productMapper.insert(product);
 
-        int index = 1;
-        for (SkuItemDTO skuDto : dto.getSkus()) {
-            insertSku(product.getId(), index++, skuDto);
-        }
+        insertSkus(product.getId(), dto.getSkus(), dto.getSkus(), 1);
     }
 
     /**
@@ -215,6 +213,8 @@ public class ProductService {
 
         List<PmsSku> existing = skuMapper.selectList(new LambdaQueryWrapper<PmsSku>()
                 .eq(PmsSku::getProductId, dto.getId()));
+        Map<Long, PmsSku> existingById = existing.stream()
+                .collect(Collectors.toMap(PmsSku::getId, Function.identity()));
         Set<Long> incomingIds = dto.getSkus().stream()
                 .map(SkuItemDTO::getId)
                 .filter(Objects::nonNull)
@@ -223,27 +223,31 @@ public class ProductService {
                 .filter(id -> !incomingIds.contains(id)).toList();
         requireRemovableSkus(removedIds);
         removedIds.forEach(skuMapper::deleteById);
-        int index = existing.size() + 1;
         for (SkuItemDTO skuDto : dto.getSkus()) {
-            if (skuDto.getId() != null) {
-                boolean belongs = existing.stream().anyMatch(sku -> sku.getId().equals(skuDto.getId()));
-                if (!belongs) {
-                    throw new BusinessException("存在不属于该商品的 SKU，请刷新后重试");
-                }
-                PmsSku update = new PmsSku();
-                update.setId(skuDto.getId());
-                update.setSpecs(skuDto.getSpecs());
-                update.setPrice(skuDto.getPrice());
-                update.setStock(skuDto.getStock());
-                update.setPic(skuDto.getPic());
-                if (StringUtils.hasText(skuDto.getSkuCode())) {
-                    update.setSkuCode(skuDto.getSkuCode());
-                }
-                skuMapper.updateById(update);
-            } else {
-                insertSku(product.getId(), index++, skuDto);
+            if (skuDto.getId() == null) {
+                continue;
             }
+            PmsSku current = existingById.get(skuDto.getId());
+            if (current == null) {
+                throw new BusinessException("存在不属于该商品的 SKU，请刷新后重试");
+            }
+            if (skuDto.getStock() != null && skuDto.getExpectedStock() != null
+                    && !Objects.equals(current.getStock(), skuDto.getExpectedStock())) {
+                throw new BusinessException("SKU 库存已变化，请刷新后重新调整");
+            }
+            PmsSku update = new PmsSku();
+            update.setId(current.getId());
+            update.setSpecs(skuDto.getSpecs());
+            update.setPrice(skuDto.getPrice());
+            update.setStock(skuDto.getStock());
+            update.setPic(skuDto.getPic());
+            if (StringUtils.hasText(skuDto.getSkuCode())) {
+                update.setSkuCode(skuDto.getSkuCode());
+            }
+            skuMapper.updateById(update);
         }
+        List<SkuItemDTO> newSkus = dto.getSkus().stream().filter(sku -> sku.getId() == null).toList();
+        insertSkus(product.getId(), newSkus, dto.getSkus(), existing.size() + 1);
         recalcProductStat(product.getId());
     }
 
@@ -346,15 +350,29 @@ public class ProductService {
         product.setPublishStatus(dto.getPublishStatus());
     }
 
-    private void insertSku(Long productId, int index, SkuItemDTO dto) {
+    private void insertSkus(Long productId, List<SkuItemDTO> newSkus, List<SkuItemDTO> allSkus, int nextIndex) {
+        Set<String> reservedCodes = allSkus.stream().map(SkuItemDTO::getSkuCode)
+                .filter(StringUtils::hasText).map(code -> code.toUpperCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        for (SkuItemDTO sku : newSkus) {
+            String code = sku.getSkuCode();
+            if (!StringUtils.hasText(code)) {
+                do {
+                    code = String.format(Locale.ROOT, "SKU-%04d-%02d", productId, nextIndex++);
+                } while (reservedCodes.contains(code) || skuMapper.exists(
+                        new LambdaQueryWrapper<PmsSku>().eq(PmsSku::getSkuCode, code)));
+            }
+            insertSku(productId, code, sku);
+        }
+    }
+
+    private void insertSku(Long productId, String code, SkuItemDTO dto) {
         PmsSku sku = new PmsSku();
         sku.setProductId(productId);
-        sku.setSkuCode(StringUtils.hasText(dto.getSkuCode())
-                ? dto.getSkuCode()
-                : String.format("SKU-%04d-%02d", productId, index));
+        sku.setSkuCode(code);
         sku.setSpecs(dto.getSpecs());
         sku.setPrice(dto.getPrice());
-        sku.setStock(dto.getStock());
+        sku.setStock(requireNewSkuStock(dto));
         sku.setSales(0);
         sku.setPic(dto.getPic());
         skuMapper.insert(sku);
@@ -384,6 +402,13 @@ public class ProductService {
     }
 
     private int calcTotalStock(ProductSaveDTO dto) {
-        return dto.getSkus().stream().mapToInt(SkuItemDTO::getStock).sum();
+        return dto.getSkus().stream().mapToInt(ProductService::requireNewSkuStock).sum();
+    }
+
+    private static int requireNewSkuStock(SkuItemDTO sku) {
+        if (sku.getStock() == null) {
+            throw new BusinessException("请填写新增 SKU 的库存");
+        }
+        return sku.getStock();
     }
 }

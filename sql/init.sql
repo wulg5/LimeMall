@@ -209,6 +209,8 @@ CREATE TABLE `oms_order` (
   `id`               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `order_sn`         VARCHAR(32)  NOT NULL COMMENT '订单编号',
   `member_id`        BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
+  `checkout_request_id` CHAR(32) DEFAULT NULL COMMENT '结算请求号',
+  `payment_check_time` DATETIME DEFAULT NULL COMMENT '已发起支付的最近查单时间',
   `total_amount`     DECIMAL(10,2) NOT NULL COMMENT '商品总额',
   `coupon_amount`    DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '优惠券抵扣金额',
   `freight_amount`   DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '运费',
@@ -229,6 +231,8 @@ CREATE TABLE `oms_order` (
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_sn` (`order_sn`),
+  UNIQUE KEY `uk_member_checkout_request` (`member_id`, `checkout_request_id`),
+  KEY `idx_payment_check` (`status`, `payment_check_time`, `id`),
   KEY `idx_member` (`member_id`),
   KEY `idx_status` (`status`),
   KEY `idx_create_time` (`create_time`)
@@ -420,6 +424,7 @@ CREATE TABLE `ums_points_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `member_id`   BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
   `amount`      INT          NOT NULL COMMENT '批次剩余积分（获取为正；流水为变动量）',
+  `earned_amount` INT        DEFAULT NULL COMMENT '获取批次的原始入账积分',
   `type`        TINYINT      NOT NULL DEFAULT 1 COMMENT '类型：1获取批次 2消费流水 3过期流水 4退款撤回流水',
   `remark`      VARCHAR(255) DEFAULT NULL COMMENT '备注（订单号/兑换说明）',
   `expire_time` DATETIME     DEFAULT NULL COMMENT '批次过期时间（获取批次专属）',
@@ -756,8 +761,8 @@ UPDATE `ums_member` SET `points` = 2350 WHERE `id` = 6;
 UPDATE `ums_member` SET `points` = 2420 WHERE `id` = 10;
 
 -- 历史积分迁移为账本批次（12 个月后过期）
-INSERT INTO `ums_points_log` (`member_id`, `amount`, `type`, `remark`, `expire_time`)
-SELECT `id`, `points`, 1, '历史积分迁移', DATE_ADD(NOW(), INTERVAL 12 MONTH)
+INSERT INTO `ums_points_log` (`member_id`, `amount`, `earned_amount`, `type`, `remark`, `expire_time`)
+SELECT `id`, `points`, `points`, 1, '历史积分迁移', DATE_ADD(NOW(), INTERVAL 12 MONTH)
 FROM `ums_member` WHERE `points` > 0;
 
 -- 优惠券

@@ -27,9 +27,12 @@ public class SkuItemDTO {
     @DecimalMin(value = "0.01", message = "SKU 价格必须大于 0")
     private BigDecimal price;
 
-    @NotNull(message = "请填写 SKU 库存")
     @Min(value = 0, message = "SKU 库存不能为负数")
     private Integer stock;
+
+    /** 编辑既有规格库存时，记录页面加载时的可售库存。 */
+    @Min(value = 0, message = "原 SKU 库存不能为负数")
+    private Integer expectedStock;
 
     private String pic;
 }

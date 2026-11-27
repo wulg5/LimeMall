@@ -97,6 +97,10 @@ export function createOrder(data) {
   return request.post('/portal/orders', data)
 }
 
+export function getCheckoutResult(requestId) {
+  return request.get(`/portal/orders/checkout/${requestId}`)
+}
+
 export function getMyOrders(params) {
   return request.get('/portal/orders', { params })
 }
@@ -106,7 +110,7 @@ export function getMyOrderDetail(id) {
 }
 
 export function payOrder(id) {
-  return request.post(`/portal/orders/${id}/pay`)
+  return request.post(`/portal/orders/${id}/pay`, undefined, { params: { returnHost: window.location.hostname } })
 }
 
 export function cancelOrder(id) {

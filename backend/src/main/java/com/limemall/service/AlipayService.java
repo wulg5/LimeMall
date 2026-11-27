@@ -11,7 +11,9 @@ import com.limemall.vo.PayConfigVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -31,6 +33,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.Map;
 import java.util.TreeMap;
@@ -73,7 +76,7 @@ public class AlipayService {
     private volatile String cachedPublicRaw;
     private volatile PublicKey cachedPublicKey;
 
-    /** 生效配置（后台配置优先，环境变量兜底；密钥齐全且开关打开才启用） */
+    /** 后台配置优先，环境变量兜底。收款需要完整密钥和异步通知地址。 */
     private ResolvedConfig resolve() {
         Map<String, String> db = configService.getAll();
         String appId = firstNonBlank(db.get(KEY_APP_ID), envProperties.getAppId());
@@ -85,7 +88,7 @@ public class AlipayService {
         String enabledFlag = db.get(KEY_ENABLED);
         boolean keysReady = StringUtils.hasText(appId)
                 && StringUtils.hasText(privateKey) && StringUtils.hasText(publicKey);
-        boolean enabled = keysReady
+        boolean enabled = keysReady && validNotifyUrl(notifyUrl)
                 && (StringUtils.hasText(enabledFlag) ? "1".equals(enabledFlag.trim()) : true);
         String mode = db.keySet().stream().anyMatch(key -> key.startsWith("alipay."))
                 ? "db" : (keysReady ? "env" : "none");
@@ -120,7 +123,12 @@ public class AlipayService {
     }
 
     /** 保存后台配置（密钥留空 = 保持不变） */
+    @Transactional
     public void saveConfig(PayConfigSaveDTO dto) {
+        if (Boolean.TRUE.equals(dto.getEnabled())
+                && !validNotifyUrl(firstNonBlank(dto.getNotifyUrl(), resolve().notifyUrl()))) {
+            throw new BusinessException("启用支付宝支付前，请填写公网可访问的异步通知地址");
+        }
         configService.put(KEY_ENABLED, Boolean.TRUE.equals(dto.getEnabled()) ? "1" : "0", "支付宝启用开关");
         if (StringUtils.hasText(dto.getAppId())) {
             configService.put(KEY_APP_ID, dto.getAppId().trim(), "支付宝沙箱 APPID");
@@ -145,8 +153,11 @@ public class AlipayService {
     /**
      * 构建电脑网站支付跳转 URL（跳转支付宝收银台）。
      */
-    public String buildPagePayUrl(OmsOrder order, LocalDateTime paymentDeadline) {
+    public String buildPagePayUrl(OmsOrder order, LocalDateTime paymentDeadline, String returnHost) {
         ResolvedConfig config = resolve();
+        if (!config.enabled()) {
+            throw new BusinessException("支付功能尚未配置，请联系管理员");
+        }
         String bizContent = "{"
                 + "\"out_trade_no\":\"" + order.getOrderSn() + "\","
                 + "\"product_code\":\"FAST_INSTANT_TRADE_PAY\","
@@ -156,23 +167,87 @@ public class AlipayService {
                 + "\"subject\":\"青柠商城订单 " + order.getOrderSn() + "\""
                 + "}";
         TreeMap<String, String> params = requestParameters(config, "alipay.trade.page.pay", bizContent);
-        if (StringUtils.hasText(config.notifyUrl())) {
-            params.put("notify_url", config.notifyUrl());
-        }
+        params.put("notify_url", config.notifyUrl().trim());
         if (StringUtils.hasText(config.returnUrl())) {
-            params.put("return_url", config.returnUrl());
+            params.put("return_url", paymentReturnUrl(config.returnUrl(), returnHost));
         }
         return config.gatewayUrl() + "?" + signAndEncode(config, params);
     }
+
+    private static boolean validNotifyUrl(String url) {
+        if (!StringUtils.hasText(url)) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(url.trim());
+            return ("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null && !isLoopbackHost(uri.getHost());
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static String paymentReturnUrl(String configuredUrl, String returnHost) {
+        if (isLoopbackHost(returnHost)) {
+            URI uri = URI.create(configuredUrl);
+            if (isLoopbackHost(uri.getHost())) {
+                return UriComponentsBuilder.fromUri(uri).host(returnHost).build(true).toUriString();
+            }
+        }
+        return configuredUrl;
+    }
+
+    private static boolean isLoopbackHost(String host) {
+        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
+    }
+
+    /** 查单响应验签后才可入账，超时仍在等待付款时先关闭支付宝交易。 */
+    public PaymentCheck checkPayment(OmsOrder order, boolean expired) {
+        ResolvedConfig config = resolve();
+        requireChannelKeys(config);
+        var identity = objectMapper.createObjectNode().put("out_trade_no", order.getOrderSn());
+        JsonNode result = gatewayCall(config, "alipay.trade.query", identity);
+        if ("40004".equals(result.path("code").asText())
+                && "ACQ.TRADE_NOT_EXIST".equals(result.path("sub_code").asText())) {
+            return new PaymentCheck(null, expired);
+        }
+        if (!isSuccessfulTradeResponse(order, result)) {
+            throw new BusinessException("支付宝查单未确认订单状态");
+        }
+        return switch (result.path("trade_status").asText()) {
+            case "TRADE_SUCCESS", "TRADE_FINISHED" -> {
+                if (!sameAmount(order.getPayAmount(), result.path("total_amount"))) {
+                    throw new BusinessException("支付宝查单金额与订单金额不符");
+                }
+                String paidAt = result.path("send_pay_date").asText();
+                try {
+                    LocalDateTime paymentTime = paidAt.isBlank() ? LocalDateTime.now()
+                            : LocalDateTime.parse(paidAt, ALIPAY_TIME).atZone(ALIPAY_ZONE)
+                            .withZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
+                    yield new PaymentCheck(paymentTime, true);
+                } catch (DateTimeParseException e) {
+                    throw new BusinessException("支付宝查单付款时间格式不正确");
+                }
+            }
+            case "TRADE_CLOSED" -> new PaymentCheck(null, true);
+            case "WAIT_BUYER_PAY" -> new PaymentCheck(null, (expired || order.getStatus() == OrderService.STATUS_CLOSED)
+                    && isSuccessfulTradeResponse(order, gatewayCall(config, "alipay.trade.close", identity)));
+            default -> throw new BusinessException("支付宝查单返回未知交易状态");
+        };
+    }
+
+    private boolean isSuccessfulTradeResponse(OmsOrder order, JsonNode result) {
+        return "10000".equals(result.path("code").asText())
+                && order.getOrderSn().equals(result.path("out_trade_no").asText());
+    }
+
+    public record PaymentCheck(LocalDateTime paidAt, boolean finished) {}
 
     /** 全额原路退款。用商户订单号派生固定请求号，重试与查询均使用同一号码。 */
     public boolean refund(String orderSn, BigDecimal amount) {
         ResolvedConfig config = resolve();
         // 即使暂停收新款，也必须能处理已付款订单的退款。
-        if (!StringUtils.hasText(config.appId()) || !StringUtils.hasText(config.privateKey())
-                || !StringUtils.hasText(config.publicKey())) {
-            throw new BusinessException("支付宝密钥未配置，退款等待处理");
-        }
+        requireChannelKeys(config);
         String refundNo = "LMRF-" + orderSn;
         var identity = objectMapper.createObjectNode()
                 .put("out_trade_no", orderSn).put("out_request_no", refundNo);
@@ -190,6 +265,13 @@ public class AlipayService {
                 && orderSn.equals(query.path("out_trade_no").asText())
                 && refundNo.equals(query.path("out_request_no").asText())
                 && sameAmount(amount, query.path("refund_amount"));
+    }
+
+    private void requireChannelKeys(ResolvedConfig config) {
+        if (!StringUtils.hasText(config.appId()) || !StringUtils.hasText(config.privateKey())
+                || !StringUtils.hasText(config.publicKey())) {
+            throw new BusinessException("支付宝密钥未配置，等待渠道处理");
+        }
     }
 
     private boolean sameAmount(BigDecimal expected, JsonNode amount) {
@@ -215,9 +297,9 @@ public class AlipayService {
             return verifiedResponse(config, method.replace('.', '_') + "_response", response.body());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new BusinessException("支付宝退款请求中断");
+            throw new BusinessException("支付宝网关请求中断");
         } catch (IOException e) {
-            throw new BusinessException("支付宝退款响应暂不可用");
+            throw new BusinessException("支付宝网关响应暂不可用");
         }
     }
 
@@ -225,7 +307,7 @@ public class AlipayService {
     private JsonNode verifiedResponse(ResolvedConfig config, String responseName, String body) throws IOException {
         try (var parser = objectMapper.createParser(body)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
-                throw new BusinessException("支付宝退款响应格式不正确");
+                throw new BusinessException("支付宝网关响应格式不正确");
             }
             String response = null;
             String signature = null;
@@ -244,7 +326,7 @@ public class AlipayService {
                 }
             }
             if (response == null || signature == null || !verifySignature(config, response, signature)) {
-                throw new BusinessException("支付宝退款响应验签失败");
+                throw new BusinessException("支付宝网关响应验签失败");
             }
             return objectMapper.readTree(response);
         }

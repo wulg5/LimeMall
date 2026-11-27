@@ -24,6 +24,9 @@ public class UmsPointsLog {
     /** 批次剩余积分（获取为正；流水记录为对应变动量） */
     private Integer amount;
 
+    /** 获取批次的原始入账积分。旧记录缺少原始值时为空。 */
+    private Integer earnedAmount;
+
     /** 类型：1获取批次 2消费流水 3过期流水 4退款撤回流水 */
     private Integer type;
 

@@ -58,6 +58,12 @@ public class PortalOrderController {
         return Result.ok(orderService.pageMine(SecurityUtils.getMemberId(), pageNum, pageSize, status));
     }
 
+    @GetMapping("/checkout/{requestId:[0-9a-f]{32}}")
+    @Operation(summary = "查询本次结算是否已经生成订单")
+    public Result<OrderDetailVO> checkoutResult(@PathVariable String requestId) {
+        return Result.ok(orderService.detailByCheckoutRequest(SecurityUtils.getMemberId(), requestId));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "我的订单详情")
     public Result<OrderDetailVO> detail(@PathVariable Long id) {
@@ -66,8 +72,9 @@ public class PortalOrderController {
 
     @PostMapping("/{id}/pay")
     @Operation(summary = "发起支付（返回收银台链接；未配置支付渠道时返回错误）")
-    public Result<Map<String, Object>> pay(@PathVariable Long id) {
-        return Result.ok(orderService.pay(SecurityUtils.getMemberId(), id));
+    public Result<Map<String, Object>> pay(@PathVariable Long id,
+                                            @RequestParam(required = false) String returnHost) {
+        return Result.ok(orderService.pay(SecurityUtils.getMemberId(), id, returnHost));
     }
 
     @PostMapping("/{id}/cancel")

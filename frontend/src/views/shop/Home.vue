@@ -97,7 +97,7 @@
       </div>
       <div class="deal-grid">
         <div v-for="item in dealItems" :key="item.key" class="deal-card"
-             @click="$router.push(`/shop/product/${item.productId}`)">
+             @click="$router.push({ path: `/shop/product/${item.productId}`, query: { skuId: item.skuId } })">
           <img :src="item.pic || '/img/logo.svg'" alt="" />
           <div class="deal-info">
             <div class="deal-name">{{ item.name }}</div>
@@ -128,12 +128,12 @@
       <div class="points-intro">
         <div class="pi-title">积分商城</div>
         <p class="pi-desc">
-          购物得积分，100 积分 = 1 元，可兑换全场优惠券<br />
+          购物得积分，100 积分 = 1 元，可兑换积分专享券<br />
           金卡会员积分 1.2 倍 · 钻石会员 1.5 倍 · 积分 12 个月滚动过期
         </p>
         <el-button type="primary" @click="$router.push('/shop/points')">去兑换</el-button>
       </div>
-      <div class="points-coupons">
+      <div v-if="pointsPreview.length" class="points-coupons">
         <div v-for="coupon in pointsPreview" :key="coupon.id" class="pc" @click="$router.push('/shop/points')">
           <div class="pc-amount"><i>¥</i>{{ Number(coupon.amount) }}</div>
           <div class="pc-cond">{{ Number(coupon.minAmount) > 0 ? `满 ${Number(coupon.minAmount)} 元可用` : '无门槛' }}</div>
@@ -231,6 +231,7 @@ const dealItems = computed(() => {
       key: `f-${flash.id}`,
       flash: true,
       productId: flash.productId,
+      skuId: flash.skuId,
       name: flash.productName,
       pic: flash.mainPic,
       price: Number(flash.flashPrice),
@@ -266,16 +267,7 @@ const dealCountdown = computed(() => {
   return formatRemain(endTs - nowTs.value)
 })
 
-const pointsPreview = computed(() => {
-  if (exchangeCoupons.value.length) {
-    return exchangeCoupons.value.slice(0, 3)
-  }
-  return [
-    { id: 'a', amount: 3, minAmount: 0, pointsPrice: 300 },
-    { id: 'b', amount: 5, minAmount: 50, pointsPrice: 500 },
-    { id: 'c', amount: 10, minAmount: 100, pointsPrice: 1000 }
-  ]
-})
+const pointsPreview = computed(() => exchangeCoupons.value.slice(0, 3))
 
 function bannerBg(banner) {
   return `linear-gradient(105deg, ${banner.bgFrom || '#0b3d33'} 0%, ${banner.bgTo || '#0d9488'} 100%)`
@@ -300,11 +292,12 @@ function remainTo(endTime) {
 }
 
 onMounted(async () => {
-  const [homeData, bannerData, noticeData, flashData] = await Promise.all([
+  const [homeData, bannerData, noticeData, flashData, coupons] = await Promise.all([
     getHome(),
     getBanners().catch(() => []),
     getNotices().catch(() => []),
-    getFlashSales().catch(() => [])
+    getFlashSales().catch(() => []),
+    getExchangeCoupons().catch(() => [])
   ])
   categories.value = homeData.categories || []
   hotProducts.value = homeData.hotProducts || []
@@ -312,13 +305,7 @@ onMounted(async () => {
   banners.value = bannerData.length ? bannerData : DEFAULT_BANNERS
   notices.value = noticeData.length ? noticeData.map((notice) => notice.content) : DEFAULT_NOTICES
   flashSales.value = flashData || []
-  if (shopStore.token) {
-    try {
-      exchangeCoupons.value = await getExchangeCoupons()
-    } catch (e) {
-      exchangeCoupons.value = []
-    }
-  }
+  exchangeCoupons.value = coupons
   timer = setInterval(() => { nowTs.value = Date.now() }, 1000)
 })
 

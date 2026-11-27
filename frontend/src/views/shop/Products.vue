@@ -36,7 +36,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { getCategories, getProducts } from '@/api/portal'
@@ -44,34 +44,54 @@ import ProductCard from '@/components/ProductCard.vue'
 
 const route = useRoute()
 
-const keyword = ref(route.query.name || '')
-const categoryId = ref(route.query.categoryId ? Number(route.query.categoryId) : null)
-const sort = ref(route.query.sort || '')
+const keyword = ref('')
+const categoryId = ref(null)
+const sort = ref('')
 const categories = ref([])
 const list = ref([])
 const total = ref(0)
 const pageNum = ref(1)
 const pageSize = ref(12)
 
+let latestRequest = 0
+
 onMounted(async () => {
   categories.value = await getCategories()
-  load()
 })
 
+watch(() => route.query, (query) => {
+  keyword.value = query.name || ''
+  categoryId.value = query.categoryId ? Number(query.categoryId) : null
+  sort.value = query.sort || ''
+  handleSearch()
+}, { immediate: true })
+
 async function load() {
-  const data = await getProducts({
-    pageNum: pageNum.value,
-    pageSize: pageSize.value,
-    name: keyword.value || undefined,
-    categoryId: categoryId.value || undefined,
-    sort: sort.value || undefined
-  })
-  list.value = data.records
-  total.value = data.total
+  const request = ++latestRequest
+  try {
+    const data = await getProducts({
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+      name: keyword.value || undefined,
+      categoryId: categoryId.value || undefined,
+      sort: sort.value || undefined
+    })
+    if (request === latestRequest) {
+      list.value = data.records
+      total.value = data.total
+    }
+  } catch {
+    if (request === latestRequest) {
+      list.value = []
+      total.value = 0
+    }
+  }
 }
 
 function handleSearch() {
   pageNum.value = 1
+  list.value = []
+  total.value = 0
   load()
 }
 </script>

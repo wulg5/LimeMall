@@ -3,6 +3,7 @@ package com.limemall.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.limemall.common.BusinessException;
 import com.limemall.config.AlipayProperties;
+import com.limemall.entity.OmsOrder;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,16 +11,20 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -30,7 +35,9 @@ class AlipayServiceTest {
     private final AtomicBoolean confirmed = new AtomicBoolean();
     private final AtomicBoolean tampered = new AtomicBoolean();
     private final AtomicInteger requests = new AtomicInteger();
+    private final AtomicReference<String> tradeStatus = new AtomicReference<>("TRADE_SUCCESS");
     private HttpServer gateway;
+    private SysConfigService settings;
     private AlipayService service;
 
     @BeforeEach
@@ -58,16 +65,23 @@ class AlipayServiceTest {
                     assertTrue(verifier.verify(Base64.getDecoder().decode(signature)));
                     var biz = json.readTree(params.get("biz_content"));
                     assertEquals("LM-fixture", biz.path("out_trade_no").asText());
-                    assertEquals("LMRF-LM-fixture", biz.path("out_request_no").asText());
                     String method = params.get("method");
                     var result = json.createObjectNode().put("code", "10000").put("out_trade_no", "LM-fixture");
-                    if ("alipay.trade.refund".equals(method)) {
-                        assertEquals("94.52", biz.path("refund_amount").asText());
-                        result.put("fund_change", "N");
-                    } else {
-                        assertEquals("alipay.trade.fastpay.refund.query", method);
-                        result.put("refund_status", confirmed.get() ? "REFUND_SUCCESS" : "PROCESSING");
-                        result.put("out_request_no", "LMRF-LM-fixture").put("refund_amount", "94.52");
+                    switch (method) {
+                        case "alipay.trade.refund" -> {
+                            assertEquals("LMRF-LM-fixture", biz.path("out_request_no").asText());
+                            assertEquals("94.52", biz.path("refund_amount").asText());
+                            result.put("fund_change", "N");
+                        }
+                        case "alipay.trade.fastpay.refund.query" -> {
+                            assertEquals("LMRF-LM-fixture", biz.path("out_request_no").asText());
+                            result.put("refund_status", confirmed.get() ? "REFUND_SUCCESS" : "PROCESSING");
+                            result.put("out_request_no", "LMRF-LM-fixture").put("refund_amount", "94.52");
+                        }
+                        case "alipay.trade.query" -> result.put("trade_status", tradeStatus.get())
+                                .put("total_amount", "94.52").put("send_pay_date", "2026-11-27 10:00:00");
+                        case "alipay.trade.close" -> assertEquals("WAIT_BUYER_PAY", tradeStatus.get());
+                        default -> throw new AssertionError(method);
                     }
                     String raw = json.writerWithDefaultPrettyPrinter().writeValueAsString(result);
                     Signature signer = Signature.getInstance("SHA256withRSA");
@@ -94,7 +108,7 @@ class AlipayServiceTest {
         config.setMerchantPrivateKey(Base64.getEncoder().encodeToString(merchant.getPrivate().getEncoded()));
         config.setAlipayPublicKey(Base64.getEncoder().encodeToString(provider.getPublic().getEncoded()));
         config.setGatewayUrl("http://127.0.0.1:" + gateway.getAddress().getPort());
-        SysConfigService settings = mock(SysConfigService.class);
+        settings = mock(SysConfigService.class);
         when(settings.getAll()).thenReturn(Map.of(AlipayService.KEY_ENABLED, "0"));
         service = new AlipayService(config, json, settings);
     }
@@ -111,6 +125,52 @@ class AlipayServiceTest {
         confirmed.set(true);
         assertTrue(service.refund("LM-fixture", amount));
         assertEquals(4, requests.get());
+    }
+
+    @Test
+    void requiresNotifyUrlAndKeepsLocalReturnOnShopHost() {
+        when(settings.getAll()).thenReturn(Map.of(AlipayService.KEY_ENABLED, "1"));
+        assertFalse(service.isEnabled());
+        assertThrows(BusinessException.class,
+                () -> service.buildPagePayUrl(order(), LocalDateTime.now().plusMinutes(10), "127.0.0.1"));
+
+        when(settings.getAll()).thenReturn(Map.of(AlipayService.KEY_ENABLED, "1",
+                AlipayService.KEY_NOTIFY_URL, "https://notify.example.test/notify",
+                AlipayService.KEY_RETURN_URL, "http://localhost:5173/shop/orders?from=x%20y"));
+        assertTrue(service.isEnabled());
+        var params = URI.create(service.buildPagePayUrl(
+                order(), LocalDateTime.now().plusMinutes(10), "127.0.0.1")).getRawQuery();
+        assertTrue(URLDecoder.decode(params, StandardCharsets.UTF_8)
+                .contains("return_url=http://127.0.0.1:5173/shop/orders?from=x%20y"));
+    }
+
+    @Test
+    void reconcilesSignedPaymentAndRejectsWrongAmount() {
+        var result = service.checkPayment(order(), false);
+        assertEquals(LocalDateTime.of(2026, 11, 27, 10, 0).atZone(ZoneId.of("Asia/Shanghai"))
+                .withZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime(), result.paidAt());
+        assertTrue(result.finished());
+
+        OmsOrder otherAmount = order();
+        otherAmount.setPayAmount(new BigDecimal("1.00"));
+        assertThrows(BusinessException.class, () -> service.checkPayment(otherAmount, false));
+    }
+
+    @Test
+    void closesUnpaidChannelTradeOnlyAfterDeadline() {
+        tradeStatus.set("WAIT_BUYER_PAY");
+        assertFalse(service.checkPayment(order(), false).finished());
+        assertEquals(1, requests.get());
+        assertTrue(service.checkPayment(order(), true).finished());
+        assertEquals(3, requests.get());
+    }
+
+    private OmsOrder order() {
+        OmsOrder order = new OmsOrder();
+        order.setOrderSn("LM-fixture");
+        order.setPayAmount(new BigDecimal("94.52"));
+        order.setStatus(OrderService.STATUS_UNPAID);
+        return order;
     }
 
     @Test

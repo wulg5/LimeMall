@@ -144,6 +144,7 @@ public class CouponService {
                 .eq(SmsCoupon::getStatus, 1)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
+                .eq(SmsCoupon::getPointsPrice, 0)
                 .apply("receive_count < total_count")
                 .orderByDesc(SmsCoupon::getId));
         Map<Long, Long> myReceived = couponMemberMapper.selectList(
@@ -179,6 +180,9 @@ public class CouponService {
         if (coupon == null || coupon.getStatus() != 1) {
             throw new BusinessException("优惠券不存在或已停止发放");
         }
+        if (coupon.getPointsPrice() > 0) {
+            throw new BusinessException("该优惠券仅限积分兑换");
+        }
         if (now.isBefore(coupon.getStartTime()) || now.isAfter(coupon.getEndTime())) {
             throw new BusinessException("不在优惠券领取时间内");
         }
@@ -191,6 +195,7 @@ public class CouponService {
         int affected = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)
+                .eq(SmsCoupon::getPointsPrice, 0)
                 .eq(SmsCoupon::getStatus, 1)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
@@ -254,7 +259,8 @@ public class CouponService {
                 .gt(SmsCoupon::getPointsPrice, 0)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
-                .orderByAsc(SmsCoupon::getPointsPrice));
+                .apply("receive_count < total_count")
+                .orderByAsc(SmsCoupon::getPointsPrice, SmsCoupon::getId));
         return coupons.stream().map(coupon -> {
             PortalCouponVO vo = new PortalCouponVO();
             vo.setId(coupon.getId());
@@ -301,6 +307,7 @@ public class CouponService {
         int stock = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)
+                .eq(SmsCoupon::getPointsPrice, coupon.getPointsPrice())
                 .eq(SmsCoupon::getStatus, 1)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)

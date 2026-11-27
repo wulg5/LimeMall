@@ -164,6 +164,7 @@ public class OrderService {
         return orderMapper.selectList(new LambdaQueryWrapper<OmsOrder>()
                         .select(OmsOrder::getId)
                         .eq(OmsOrder::getStatus, STATUS_UNPAID)
+                        .isNull(OmsOrder::getPaymentCheckTime)
                         .le(OmsOrder::getCreateTime, LocalDateTime.now().minusMinutes(timeoutMinutes))
                         .last("LIMIT 100"))
                 .stream().map(OmsOrder::getId).toList();
@@ -177,7 +178,7 @@ public class OrderService {
     @Transactional
     public boolean closeExpiredOrder(Long orderId, int timeoutMinutes) {
         OmsOrder order = orderMapper.lockById(orderId);
-        if (order == null || order.getStatus() != STATUS_UNPAID) {
+        if (order == null || order.getStatus() != STATUS_UNPAID || order.getPaymentCheckTime() != null) {
             return false;
         }
         if (order.getCreateTime().isAfter(LocalDateTime.now().minusMinutes(timeoutMinutes))) {
@@ -203,6 +204,10 @@ public class OrderService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public OrderDetailVO createOrder(Long memberId, OrderCreateDTO dto) {
         UmsMember buyer = memberMapper.lockById(memberId);
+        OmsOrder previous = findCheckoutOrder(memberId, dto.getCheckoutRequestId());
+        if (previous != null) {
+            return toDetailVO(previous);
+        }
         Map<Long, Integer> quantities = mergeQuantities(dto.getItems());
         // 商品写入使用相同的加锁顺序，防止下单时删除规格。
         List<PmsSku> skus = skuMapper.selectBatchIds(quantities.keySet());
@@ -257,6 +262,7 @@ public class OrderService {
         OmsOrder order = new OmsOrder();
         order.setOrderSn(generateOrderSn());
         order.setMemberId(memberId);
+        order.setCheckoutRequestId(dto.getCheckoutRequestId());
         order.setTotalAmount(quote.totalAmount());
         order.setCouponAmount(quote.couponAmount());
         order.setFreightAmount(quote.freightAmount());
@@ -300,6 +306,17 @@ public class OrderService {
             markPaid(order, LocalDateTime.now());
         }
         return toDetailVO(orderMapper.selectById(order.getId()));
+    }
+
+    public OrderDetailVO detailByCheckoutRequest(Long memberId, String requestId) {
+        OmsOrder order = findCheckoutOrder(memberId, requestId);
+        return order == null ? null : toDetailVO(order);
+    }
+
+    private OmsOrder findCheckoutOrder(Long memberId, String requestId) {
+        return requestId == null ? null : orderMapper.selectOne(new LambdaQueryWrapper<OmsOrder>()
+                .eq(OmsOrder::getMemberId, memberId)
+                .eq(OmsOrder::getCheckoutRequestId, requestId));
     }
 
     @Transactional(readOnly = true)
@@ -405,7 +422,7 @@ public class OrderService {
      * 生产语义：未配置支付渠道时明确报错，**绝不**以模拟入账代替真实支付。
      */
     @Transactional
-    public Map<String, Object> pay(Long memberId, Long id) {
+    public Map<String, Object> pay(Long memberId, Long id, String returnHost) {
         OmsOrder order = requireOrderOwner(lockOrder(id), memberId);
         if (order.getStatus() != STATUS_UNPAID) {
             throw new BusinessException("当前订单状态不可支付");
@@ -418,14 +435,53 @@ public class OrderService {
             markPaid(order, LocalDateTime.now());
             return Map.of("paid", true);
         }
-        if (!alipayService.isEnabled()) {
-            throw new BusinessException("支付功能尚未配置，请联系管理员");
+        String payUrl = alipayService.buildPagePayUrl(order, paymentDeadline, returnHost);
+        if (order.getPaymentCheckTime() == null) {
+            setPaymentCheckTime(order.getId(), LocalDateTime.now());
         }
-        return Map.of("payUrl", alipayService.buildPagePayUrl(order, paymentDeadline));
+        return Map.of("payUrl", payUrl);
+    }
+
+    public List<OmsOrder> listOrdersForPaymentCheck(LocalDateTime checkBefore) {
+        return orderMapper.selectList(new LambdaQueryWrapper<OmsOrder>()
+                .in(OmsOrder::getStatus, STATUS_UNPAID, STATUS_CLOSED)
+                .le(OmsOrder::getPaymentCheckTime, checkBefore)
+                .orderByAsc(OmsOrder::getPaymentCheckTime, OmsOrder::getId)
+                .last("LIMIT 10"));
+    }
+
+    public boolean claimPaymentCheck(OmsOrder order, LocalDateTime checkBefore) {
+        return orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getPaymentCheckTime, LocalDateTime.now())
+                .eq(OmsOrder::getId, order.getId())
+                .eq(OmsOrder::getStatus, order.getStatus())
+                .le(OmsOrder::getPaymentCheckTime, checkBefore)) > 0;
+    }
+
+    public boolean isPaymentExpired(OmsOrder order) {
+        return !paymentDeadline(order).isAfter(LocalDateTime.now());
+    }
+
+    @Transactional
+    public void finishUnpaidPaymentCheck(Long orderId) {
+        OmsOrder order = lockOrder(orderId);
+        if (order.getPaymentCheckTime() == null) {
+            return;
+        }
+        if (order.getStatus() == STATUS_UNPAID) {
+            closeOrder(order);
+        }
+        setPaymentCheckTime(orderId, null);
+    }
+
+    private void setPaymentCheckTime(Long orderId, LocalDateTime time) {
+        orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                .set(OmsOrder::getPaymentCheckTime, time)
+                .eq(OmsOrder::getId, orderId));
     }
 
     /**
-     * 支付入账（支付宝异步通知调用）：以订单号定位，金额校验 + 幂等。
+     * 支付入账（支付宝通知或签名查单调用）：以订单号定位，金额校验 + 幂等。
      */
     @Transactional
     public void payByOrderSn(String orderSn, BigDecimal paidAmount, LocalDateTime paidAt) {
@@ -439,6 +495,9 @@ public class OrderService {
         }
         if (order.getStatus() == STATUS_CLOSED && order.getPayTime() == null) {
             queueLatePaymentRefund(order);
+            if (order.getPaymentCheckTime() != null) {
+                setPaymentCheckTime(order.getId(), null);
+            }
         } else if (order.getStatus() == STATUS_UNPAID) {
             markPaid(order, paidAt);
         }
@@ -469,6 +528,7 @@ public class OrderService {
         int affected = orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
                 .set(OmsOrder::getStatus, STATUS_UNSHIPPED)
                 .set(OmsOrder::getPayTime, paidAt)
+                .set(OmsOrder::getPaymentCheckTime, null)
                 .eq(OmsOrder::getId, order.getId())
                 .eq(OmsOrder::getStatus, STATUS_UNPAID));
         if (affected == 0) {

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -37,6 +38,9 @@ public class OrderCreateDTO {
 
     @DecimalMin(value = "0", message = "结算金额不能为负数")
     private BigDecimal expectedPayAmount;
+
+    @Pattern(regexp = "[0-9a-f]{32}", message = "结算请求号格式不正确")
+    private String checkoutRequestId;
 
     /**
      * 下单明细子项。

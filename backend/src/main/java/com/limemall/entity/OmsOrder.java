@@ -27,6 +27,12 @@ public class OmsOrder {
     /** 会员ID */
     private Long memberId;
 
+    /** 会员发起一次结算的请求号，用于网络失败后的重试。 */
+    private String checkoutRequestId;
+
+    /** 已打开收银台的订单上次接受渠道查询的时间。 */
+    private LocalDateTime paymentCheckTime;
+
     /** 商品总额 */
     private BigDecimal totalAmount;
 

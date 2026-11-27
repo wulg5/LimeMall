@@ -17,6 +17,7 @@ import com.limemall.vo.ChatSessionVO;
 import com.limemall.websocket.ChatWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -62,7 +63,7 @@ public class ChatService {
     /** 会员端当前会话与消息（拉取即把客服发来的消息标记已读） */
     public Map<String, Object> memberCurrent(Long memberId) {
         Map<String, Object> data = new HashMap<>();
-        UmsChatSession session = findOpenSession(memberId);
+        UmsChatSession session = findOpenSession(memberId, false);
         if (session == null) {
             data.put("session", null);
             data.put("messages", List.of());
@@ -75,10 +76,13 @@ public class ChatService {
     }
 
     /** 会员发送消息：无进行中会话则自动创建（待接入） */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void memberSend(Long memberId, String content) {
         String text = validateContent(content);
-        UmsChatSession session = findOpenSession(memberId);
+        if (memberMapper.lockById(memberId) == null) {
+            throw new BusinessException("会员不存在");
+        }
+        UmsChatSession session = findOpenSession(memberId, true);
         if (session == null) {
             session = new UmsChatSession();
             session.setMemberId(memberId);
@@ -230,12 +234,12 @@ public class ChatService {
     // 私有方法
     // ==================================================================
 
-    private UmsChatSession findOpenSession(Long memberId) {
+    private UmsChatSession findOpenSession(Long memberId, boolean lock) {
         return sessionMapper.selectOne(new LambdaQueryWrapper<UmsChatSession>()
                 .eq(UmsChatSession::getMemberId, memberId)
                 .eq(UmsChatSession::getStatus, SESSION_OPEN)
                 .orderByDesc(UmsChatSession::getId)
-                .last("LIMIT 1"));
+                .last(lock ? "LIMIT 1 FOR UPDATE" : "LIMIT 1"));
     }
 
     private UmsChatSession loadSession(Long sessionId) {
