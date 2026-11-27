@@ -1,6 +1,7 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.limemall.common.BusinessException;
@@ -209,7 +210,10 @@ public class ProductService {
         }
         validateCategory(dto.getCategoryId());
         applyDto(product, dto);
-        productMapper.updateById(product);
+        productMapper.update(product, new LambdaUpdateWrapper<PmsProduct>()
+                .eq(PmsProduct::getId, product.getId())
+                .set(dto.isBrandIdProvided() && dto.getBrandId() == null, PmsProduct::getBrandId, null)
+                .set(dto.isOriginalPriceProvided() && dto.getOriginalPrice() == null, PmsProduct::getOriginalPrice, null));
 
         List<PmsSku> existing = skuMapper.selectList(new LambdaQueryWrapper<PmsSku>()
                 .eq(PmsSku::getProductId, dto.getId()));

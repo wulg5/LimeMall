@@ -374,6 +374,7 @@ CREATE TABLE `pms_comment` (
   `member_level`    TINYINT NOT NULL DEFAULT 1 COMMENT '会员等级（快照）',
   `rating`          TINYINT NOT NULL COMMENT '评分 1-5',
   `content`         VARCHAR(500) NOT NULL COMMENT '评价内容（纯文本）',
+  `hidden`          TINYINT NOT NULL DEFAULT 0 COMMENT '0公开，1后台隐藏',
   `create_time`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '评价时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_product` (`order_id`, `product_id`),

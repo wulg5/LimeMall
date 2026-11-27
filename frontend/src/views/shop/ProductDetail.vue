@@ -214,8 +214,8 @@ function addToCart(buyNow) {
     quantity: Math.min(quantity.value, selectedSku.value.stock)
   }
   if (buyNow) {
-    cartStore.setOnly(item)
-    router.push('/shop/checkout')
+    cartStore.setBuyNow(item)
+    router.push({ path: '/shop/checkout', query: { buyNow: '1' } })
     return
   }
   cartStore.add(item)

@@ -131,6 +131,7 @@ const sending = ref(false)
 const claiming = ref(false)
 const threadRef = ref()
 let pollTimer = null
+let latestMessageRequest = 0
 
 const myAdminId = computed(() => userStore.info?.id)
 const hasReplyRole = computed(() => userStore.hasPerm('ums:chat:reply'))
@@ -209,41 +210,50 @@ async function loadHistory() {
 
 function openSession(session) {
   active.value = { ...session }
+  messages.value = []
   draft.value = ''
   loadMessages()
 }
 
 async function loadMessages() {
-  if (!active.value) return
-  messages.value = await chatSessionMessages(active.value.id)
+  const sessionId = active.value?.id
+  if (!sessionId) return
+  const request = ++latestMessageRequest
+  const received = await chatSessionMessages(sessionId)
+  if (request !== latestMessageRequest || active.value?.id !== sessionId) return
+  messages.value = received
   await nextTick()
-  if (threadRef.value) {
+  if (request === latestMessageRequest && threadRef.value) {
     threadRef.value.scrollTop = threadRef.value.scrollHeight
   }
 }
 
 async function handleClaim() {
+  const sessionId = active.value?.id
+  if (!sessionId || claiming.value) return
   claiming.value = true
   try {
-    await chatClaim(active.value.id)
+    await chatClaim(sessionId)
     ElMessage.success('已接入会话，现在可以回复会员了')
     await refreshLists()
-    if (active.value) {
+    if (active.value?.id === sessionId) {
       active.value.agentId = myAdminId.value
       active.value.agentNickname = userStore.info?.nickname
+      tab.value = 'mine'
     }
-    tab.value = 'mine'
   } finally {
     claiming.value = false
   }
 }
 
 async function handleEnd() {
+  const sessionId = active.value?.id
+  if (!sessionId) return
   try {
     await ElMessageBox.confirm('结束会话后会员再次发消息将创建新的咨询会话。确定结束吗？', '结束会话', { type: 'warning' })
-    await chatEnd(active.value.id)
+    await chatEnd(sessionId)
     ElMessage.success('会话已结束')
-    if (active.value) {
+    if (active.value?.id === sessionId) {
       active.value.status = 1
     }
     await refreshLists()
@@ -253,14 +263,16 @@ async function handleEnd() {
 }
 
 async function handleSend() {
-  const content = draft.value.trim()
-  if (!content || !active.value) return
+  const sessionId = active.value?.id
+  const submittedDraft = draft.value
+  const content = submittedDraft.trim()
+  if (!content || !sessionId || sending.value) return
   sending.value = true
   try {
-    await chatReply(active.value.id, content)
-    draft.value = ''
+    await chatReply(sessionId, content)
+    if (active.value?.id === sessionId && draft.value === submittedDraft) draft.value = ''
     await refreshLists()
-    await loadMessages()
+    if (active.value?.id === sessionId) await loadMessages()
   } finally {
     sending.value = false
   }

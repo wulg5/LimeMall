@@ -76,8 +76,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createOrder, getCheckoutResult, getMyCoupons, getOrderQuote } from '@/api/portal'
 import { useCartStore } from '@/stores/cart'
@@ -85,15 +85,23 @@ import { useShopStore } from '@/stores/shop'
 import { money } from '@/utils/format'
 
 const router = useRouter()
+const route = useRoute()
 const cartStore = useCartStore()
 const shopStore = useShopStore()
 
 const formRef = ref()
 const submitting = ref(false)
-const items = cartStore.checkedItems.map(item => ({ ...item }))
+const checkoutPath = route.fullPath
+let mounted = true
+onBeforeUnmount(() => { mounted = false })
+
+const buyingNow = route.query.buyNow === '1'
+const buyNowItem = buyingNow ? cartStore.buyNowItem : null
+const selectedItems = buyingNow ? (buyNowItem ? [buyNowItem] : []) : cartStore.checkedItems
+const items = selectedItems.map(item => ({ ...item }))
 const orderItems = items.map(({ skuId, quantity }) => ({ skuId, quantity }))
 const cartSignature = orderItems.map(({ skuId, quantity }) => `${skuId}:${quantity}`).sort().join(',')
-const retryKey = `lime_checkout:${shopStore.info?.id}:${cartSignature}`
+const retryKey = `lime_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now:' : ''}${cartSignature}`
 let checkoutRequestId = readCheckoutRequestId()
 const pendingConfirmation = ref(Boolean(checkoutRequestId))
 const quote = ref(null)
@@ -171,14 +179,21 @@ function rememberCheckoutRequest() {
 }
 
 async function showPlacedOrder(order) {
+  const requestId = checkoutRequestId
+  if (!requestId) return
   checkoutRequestId = null
   pendingConfirmation.value = false
   try {
-    sessionStorage.removeItem(retryKey)
+    if (sessionStorage.getItem(retryKey) === requestId) sessionStorage.removeItem(retryKey)
   } catch {
     // 浏览器禁用存储时，请求号仅保存在当前页面。
   }
-  cartStore.removeChecked()
+  if (buyingNow) {
+    cartStore.clearBuyNow(buyNowItem)
+  } else {
+    cartStore.removePurchased(requestId, orderItems)
+  }
+  if (!mounted || route.fullPath !== checkoutPath) return
   const requiresPayment = order.status === 0
   const orderNumber = `订单号 ${order.orderSn}`
   const message = requiresPayment
@@ -190,7 +205,7 @@ async function showPlacedOrder(order) {
     type: 'success',
     confirmButtonText: requiresPayment ? '查看订单并支付' : '查看订单'
   }).catch(() => {})
-  router.push('/shop/orders')
+  if (mounted && route.fullPath === checkoutPath) router.push('/shop/orders')
 }
 
 async function recoverOrder() {
@@ -219,7 +234,7 @@ async function refreshCheckout() {
 
 onMounted(async () => {
   if (!items.length) {
-    ElMessage.warning('请先在购物车勾选要结算的商品')
+    ElMessage.warning(buyingNow ? '请从商品详情重新发起立即购买' : '请先在购物车勾选要结算的商品')
     router.replace('/shop/cart')
     return
   }

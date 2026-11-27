@@ -1,5 +1,6 @@
 package com.limemall.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
@@ -25,4 +26,20 @@ public class MemberProfileDTO {
     private Integer gender;
 
     private LocalDate birthday;
+
+    @JsonIgnore
+    private boolean phoneProvided;
+
+    @JsonIgnore
+    private boolean birthdayProvided;
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+        this.phoneProvided = true;
+    }
+
+    public void setBirthday(LocalDate birthday) {
+        this.birthday = birthday;
+        this.birthdayProvided = true;
+    }
 }

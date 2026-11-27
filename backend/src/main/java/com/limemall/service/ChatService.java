@@ -178,6 +178,9 @@ public class ChatService {
     /** 接入会话：CAS 抢占（agent_id 为空 → 我），防止多个客服同时接待 */
     @Transactional
     public void claim(Long adminId, Long sessionId) {
+        if (adminMapper.lockActiveById(adminId) == null) {
+            throw new BusinessException("客服账号不可用");
+        }
         UmsChatSession session = loadSession(sessionId);
         if (session.getStatus() != SESSION_OPEN) {
             throw new BusinessException("会话已结束，无法接入");

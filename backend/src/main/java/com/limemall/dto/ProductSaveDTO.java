@@ -1,5 +1,6 @@
 package com.limemall.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
@@ -52,4 +53,20 @@ public class ProductSaveDTO {
     @NotEmpty(message = "请至少添加一个 SKU")
     @Valid
     private List<SkuItemDTO> skus;
+
+    @JsonIgnore
+    private boolean brandIdProvided;
+
+    @JsonIgnore
+    private boolean originalPriceProvided;
+
+    public void setBrandId(Long brandId) {
+        this.brandId = brandId;
+        this.brandIdProvided = true;
+    }
+
+    public void setOriginalPrice(BigDecimal originalPrice) {
+        this.originalPrice = originalPrice;
+        this.originalPriceProvided = true;
+    }
 }

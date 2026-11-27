@@ -215,19 +215,7 @@ public class OrderService {
         // 解析生效中的秒杀价（服务端权威价格，覆盖 SKU 常规售价）
         Map<Long, SmsFlashSale> flashMap = flashSaleService.activeSkuMap(quantities.keySet());
 
-        // 秒杀每人限购校验（时间窗口内有效购买数量 + 本次请求数量不得超过限购数）
-        for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
-            SmsFlashSale flash = flashMap.get(entry.getKey());
-            if (flash == null) {
-                continue;
-            }
-            int limit = flash.getPerUserLimit() == null ? 1 : flash.getPerUserLimit();
-            int bought = itemMapper.sumPurchasedInWindow(memberId, entry.getKey(),
-                    flash.getStartTime(), flash.getEndTime());
-            if (bought + entry.getValue() > limit) {
-                throw new BusinessException("该秒杀商品每人限购 " + limit + " 件，您已购买 " + bought + " 件");
-            }
-        }
+        requireWithinFlashLimit(memberId, quantities, flashMap);
 
         List<OmsOrderItem> items = priceItems(quantities, flashMap);
         Map<Long, BigDecimal> currentPrices = items.stream()
@@ -322,8 +310,27 @@ public class OrderService {
     @Transactional(readOnly = true)
     public OrderQuoteVO quote(Long memberId, OrderQuoteDTO dto) {
         Map<Long, Integer> quantities = mergeQuantities(dto.getItems());
-        List<OmsOrderItem> items = priceItems(quantities, flashSaleService.activeSkuMap(quantities.keySet()));
+        Map<Long, SmsFlashSale> flashMap = flashSaleService.activeSkuMap(quantities.keySet());
+        requireWithinFlashLimit(memberId, quantities, flashMap);
+        List<OmsOrderItem> items = priceItems(quantities, flashMap);
         return calculatePrice(memberMapper.selectById(memberId), dto.getCouponMemberId(), items).quote();
+    }
+
+    private void requireWithinFlashLimit(Long memberId, Map<Long, Integer> quantities,
+                                         Map<Long, SmsFlashSale> flashMap) {
+        // 秒杀每人限购校验（时间窗口内有效购买数量 + 本次请求数量不得超过限购数）
+        for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
+            SmsFlashSale flash = flashMap.get(entry.getKey());
+            if (flash == null) {
+                continue;
+            }
+            int limit = flash.getPerUserLimit() == null ? 1 : flash.getPerUserLimit();
+            int bought = itemMapper.sumPurchasedInWindow(memberId, entry.getKey(),
+                    flash.getStartTime(), flash.getEndTime());
+            if ((long) bought + entry.getValue() > limit) {
+                throw new BusinessException("该秒杀商品每人限购 " + limit + " 件，您已购买 " + bought + " 件");
+            }
+        }
     }
 
     private Map<Long, Integer> mergeQuantities(List<OrderCreateDTO.Item> requestedItems) {

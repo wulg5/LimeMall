@@ -43,7 +43,8 @@ class AlipayServiceTest {
     private final AtomicInteger requests = new AtomicInteger();
     private final AtomicReference<String> tradeStatus = new AtomicReference<>("TRADE_SUCCESS");
     private HttpServer gateway;
-    private KeyPair provider;
+    private final AtomicReference<KeyPair> merchantKeys = new AtomicReference<>();
+    private final AtomicReference<KeyPair> providerKeys = new AtomicReference<>();
     private final Map<String, String> profiles = new HashMap<>();
     private SysConfigService settings;
     private AlipayService service;
@@ -53,7 +54,9 @@ class AlipayServiceTest {
         KeyPairGenerator keys = KeyPairGenerator.getInstance("RSA");
         keys.initialize(2048);
         KeyPair merchant = keys.generateKeyPair();
-        provider = keys.generateKeyPair();
+        merchantKeys.set(merchant);
+        KeyPair provider = keys.generateKeyPair();
+        providerKeys.set(provider);
         gateway = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         gateway.createContext("/", exchange -> {
             try (exchange) {
@@ -65,7 +68,7 @@ class AlipayServiceTest {
                         params.put(pair[0], URLDecoder.decode(pair[1], StandardCharsets.UTF_8));
                     }
                     Signature verifier = Signature.getInstance("SHA256withRSA");
-                    verifier.initVerify(merchant.getPublic());
+                    verifier.initVerify(merchantKeys.get().getPublic());
                     String signature = params.remove("sign");
                     String content = String.join("&", params.entrySet().stream()
                             .map(entry -> entry.getKey() + "=" + entry.getValue()).toList());
@@ -94,7 +97,7 @@ class AlipayServiceTest {
                     }
                     String raw = json.writerWithDefaultPrettyPrinter().writeValueAsString(result);
                     Signature signer = Signature.getInstance("SHA256withRSA");
-                    signer.initSign(provider.getPrivate());
+                    signer.initSign(providerKeys.get().getPrivate());
                     signer.update(raw.getBytes(StandardCharsets.UTF_8));
                     String sign = Base64.getEncoder().encodeToString(signer.sign());
                     if (tampered.get()) {
@@ -125,6 +128,10 @@ class AlipayServiceTest {
             profiles.putIfAbsent(call.getArgument(0), call.getArgument(1));
             return null;
         }).when(profileMapper).remember(anyString(), anyString());
+        doAnswer(call -> {
+            profiles.put(call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(profileMapper).saveCredentials(anyString(), anyString());
         service = new AlipayService(config, json, settings, profileMapper);
     }
 
@@ -182,14 +189,7 @@ class AlipayServiceTest {
 
     @Test
     void olderOrdersUseTheirOriginalChannelAfterApplicationChange() throws Exception {
-        Map<String, String> active = new HashMap<>(Map.of(AlipayService.KEY_ENABLED, "1",
-                AlipayService.KEY_NOTIFY_URL, "https://notify.example.test/notify"));
-        when(settings.getAll()).thenAnswer(call -> new HashMap<>(active));
-        doAnswer(call -> {
-            active.put(call.getArgument(0), call.getArgument(1));
-            return null;
-        }).when(settings).put(anyString(), anyString(), any());
-
+        useWritableSettings();
         LocalDateTime deadline = LocalDateTime.now().plusMinutes(10);
         OmsOrder pinned = order();
         var pay = service.buildPagePayUrl(pinned, deadline, null);
@@ -209,11 +209,7 @@ class AlipayServiceTest {
         assertTrue(retry.url().contains("app_id=test-only"));
         assertTrue(service.buildPagePayUrl(order(), deadline, null).url().contains("app_id=new-application"));
 
-        Map<String, String> notification = new TreeMap<>(Map.of("app_id", "test-only", "out_trade_no", "LM-fixture"));
-        Signature signer = Signature.getInstance("SHA256withRSA");
-        signer.initSign(provider.getPrivate());
-        signer.update("app_id=test-only&out_trade_no=LM-fixture".getBytes(StandardCharsets.UTF_8));
-        notification.put("sign", Base64.getEncoder().encodeToString(signer.sign()));
+        Map<String, String> notification = signedNotify(providerKeys.get());
         assertTrue(service.verifyNotify(pinned, notification));
         assertTrue(service.verifyNotify(order(), notification));
         notification.put("app_id", "new-application");
@@ -224,6 +220,62 @@ class AlipayServiceTest {
         assertTrue(service.refund(pinned, pinned.getPayAmount()));
         assertTrue(service.refund(order(), pinned.getPayAmount()));
         assertEquals(5, requests.get());
+    }
+
+    @Test
+    void rotatesKeysForBoundOrdersEvenAfterSwitchingToAnotherApplication() throws Exception {
+        useWritableSettings();
+        OmsOrder pinned = order();
+        LocalDateTime deadline = LocalDateTime.now().plusMinutes(10);
+        pinned.setPaymentProfileId(service.buildPagePayUrl(pinned, deadline, null).profileId());
+        Map<String, String> oldNotification = signedNotify(providerKeys.get());
+
+        KeyPairGenerator keys = KeyPairGenerator.getInstance("RSA");
+        keys.initialize(2048);
+        KeyPair newMerchant = keys.generateKeyPair();
+        KeyPair newProvider = keys.generateKeyPair();
+        PayConfigSaveDTO rotated = new PayConfigSaveDTO();
+        rotated.setEnabled(true);
+        rotated.setMerchantPrivateKey(Base64.getEncoder().encodeToString(newMerchant.getPrivate().getEncoded()));
+        rotated.setAlipayPublicKey(Base64.getEncoder().encodeToString(newProvider.getPublic().getEncoded()));
+        service.saveConfig(rotated);
+        merchantKeys.set(newMerchant);
+        providerKeys.set(newProvider);
+
+        assertEquals(pinned.getPaymentProfileId(), service.buildPagePayUrl(pinned, deadline, null).profileId());
+        assertNotNull(service.checkPayment(pinned, false).paidAt());
+        assertTrue(service.verifyNotify(pinned, signedNotify(newProvider)));
+        assertFalse(service.verifyNotify(pinned, oldNotification));
+
+        PayConfigSaveDTO replacement = new PayConfigSaveDTO();
+        replacement.setEnabled(true);
+        replacement.setAppId("another-application");
+        replacement.setGatewayUrl("http://127.0.0.1:1");
+        service.saveConfig(replacement);
+
+        assertTrue(service.verifyNotify(pinned, signedNotify(newProvider)));
+        confirmed.set(true);
+        assertTrue(service.refund(pinned, pinned.getPayAmount()));
+        assertEquals(3, requests.get());
+    }
+
+    private void useWritableSettings() {
+        Map<String, String> active = new HashMap<>(Map.of(AlipayService.KEY_ENABLED, "1",
+                AlipayService.KEY_NOTIFY_URL, "https://notify.example.test/notify"));
+        when(settings.getAll()).thenAnswer(call -> new HashMap<>(active));
+        doAnswer(call -> {
+            active.put(call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(settings).put(anyString(), anyString(), any());
+    }
+
+    private Map<String, String> signedNotify(KeyPair key) throws Exception {
+        Map<String, String> notification = new TreeMap<>(Map.of("app_id", "test-only", "out_trade_no", "LM-fixture"));
+        Signature signer = Signature.getInstance("SHA256withRSA");
+        signer.initSign(key.getPrivate());
+        signer.update("app_id=test-only&out_trade_no=LM-fixture".getBytes(StandardCharsets.UTF_8));
+        notification.put("sign", Base64.getEncoder().encodeToString(signer.sign()));
+        return notification;
     }
 
     private OmsOrder order() {

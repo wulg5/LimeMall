@@ -40,6 +40,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -149,8 +150,18 @@ public class AlipayService {
         if (StringUtils.hasText(dto.getReturnUrl())) {
             configService.put(KEY_RETURN_URL, dto.getReturnUrl().trim(), "同步跳转地址");
         }
-        if (previous.channel().hasKeys() && !previous.channel().equals(resolve().channel())) {
-            profileMapper.remember(LEGACY_PROFILE, encodeProfile(previous.channel()));
+        ChannelConfig original = previous.channel();
+        ChannelConfig updated = resolve().channel();
+        if (!original.equals(updated)) {
+            if (original.hasKeys()) {
+                profileMapper.remember(LEGACY_PROFILE, encodeProfile(original));
+                if (!original.sameChannel(updated) || !updated.hasKeys()) {
+                    saveCredentials(original);
+                }
+            }
+            if (updated.hasKeys()) {
+                saveCredentials(updated);
+            }
         }
     }
 
@@ -167,7 +178,8 @@ public class AlipayService {
                 && profileMapper.find(LEGACY_PROFILE) != null) {
             profileId = LEGACY_PROFILE;
         }
-        ChannelConfig channel = profileId == null ? config.channel() : requireProfile(profileId);
+        ChannelConfig channel = profileId == null ? config.channel()
+                : withLatestCredentials(requireProfile(profileId), config.channel());
         String bizContent = "{"
                 + "\"out_trade_no\":\"" + order.getOrderSn() + "\","
                 + "\"product_code\":\"FAST_INSTANT_TRADE_PAY\","
@@ -189,13 +201,25 @@ public class AlipayService {
 
     private String rememberProfile(ChannelConfig channel) {
         String payload = encodeProfile(channel);
+        String id = fingerprint(payload);
+        if (profileMapper.find(id) == null) {
+            profileMapper.remember(id, payload);
+        }
+        return id;
+    }
+
+    private void saveCredentials(ChannelConfig channel) {
+        profileMapper.saveCredentials(credentialsId(channel), encodeProfile(channel));
+    }
+
+    private String credentialsId(ChannelConfig channel) {
+        return fingerprint("credentials:" + objectMapper.createArrayNode().add(channel.appId()).add(channel.gatewayUrl()));
+    }
+
+    private static String fingerprint(String value) {
         try {
-            String id = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(payload.getBytes(StandardCharsets.UTF_8)));
-            if (profileMapper.find(id) == null) {
-                profileMapper.remember(id, payload);
-            }
-            return id;
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 不可用", e);
         }
@@ -218,11 +242,24 @@ public class AlipayService {
     }
 
     private ChannelConfig channelFor(OmsOrder order) {
+        ChannelConfig current = resolve().channel();
+        return withLatestCredentials(originalChannel(order, current), current);
+    }
+
+    private ChannelConfig originalChannel(OmsOrder order, ChannelConfig current) {
         if (order.getPaymentProfileId() != null) {
             return requireProfile(order.getPaymentProfileId());
         }
         String legacy = profileMapper.find(LEGACY_PROFILE);
-        return legacy == null ? resolve().channel() : decodeProfile(legacy);
+        return legacy == null ? current : decodeProfile(legacy);
+    }
+
+    private ChannelConfig withLatestCredentials(ChannelConfig original, ChannelConfig current) {
+        if (original.sameChannel(current) && current.hasKeys()) {
+            return current;
+        }
+        String stored = profileMapper.find(credentialsId(original));
+        return stored == null ? original : decodeProfile(stored);
     }
 
     private ChannelConfig decodeProfile(String payload) {
@@ -452,6 +489,10 @@ public class AlipayService {
     private record ResolvedConfig(boolean enabled, ChannelConfig channel, String notifyUrl, String returnUrl, String mode) {}
 
     private record ChannelConfig(String appId, String privateKey, String publicKey, String gatewayUrl) {
+        boolean sameChannel(ChannelConfig other) {
+            return Objects.equals(appId, other.appId) && Objects.equals(gatewayUrl, other.gatewayUrl);
+        }
+
         boolean hasKeys() {
             return StringUtils.hasText(appId) && StringUtils.hasText(privateKey) && StringUtils.hasText(publicKey);
         }

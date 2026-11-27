@@ -1,6 +1,7 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.limemall.common.BusinessException;
 import com.limemall.common.PageResult;
@@ -99,6 +100,7 @@ public class CommentService {
         Page<PmsComment> page = commentMapper.selectPage(new Page<>(pageNum, pageSize),
                 new LambdaQueryWrapper<PmsComment>()
                         .eq(PmsComment::getProductId, productId)
+                        .eq(PmsComment::getHidden, 0)
                         .orderByDesc(PmsComment::getId));
         List<PublicCommentVO> records = page.getRecords().stream().map(comment -> {
             PublicCommentVO vo = new PublicCommentVO();
@@ -139,7 +141,9 @@ public class CommentService {
      */
     public PageResult<CommentVO> adminPage(long pageNum, long pageSize) {
         Page<PmsComment> page = commentMapper.selectPage(new Page<>(pageNum, pageSize),
-                new LambdaQueryWrapper<PmsComment>().orderByDesc(PmsComment::getId));
+                new LambdaQueryWrapper<PmsComment>()
+                        .eq(PmsComment::getHidden, 0)
+                        .orderByDesc(PmsComment::getId));
         List<PmsComment> comments = page.getRecords();
         if (comments.isEmpty()) {
             return PageResult.of(page, new ArrayList<>());
@@ -167,9 +171,12 @@ public class CommentService {
      * 管理端删除评价（内容违规处理）。
      */
     public void delete(Long id) {
-        if (commentMapper.selectById(id) == null) {
-            throw new BusinessException("评价不存在");
+        int changed = commentMapper.update(null, new LambdaUpdateWrapper<PmsComment>()
+                .set(PmsComment::getHidden, 1)
+                .eq(PmsComment::getId, id)
+                .eq(PmsComment::getHidden, 0));
+        if (changed == 0) {
+            throw new BusinessException("评价不存在或已隐藏");
         }
-        commentMapper.deleteById(id);
     }
 }

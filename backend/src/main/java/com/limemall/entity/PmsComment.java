@@ -40,6 +40,9 @@ public class PmsComment {
     /** 评价内容（纯文本，前端按文本渲染防 XSS） */
     private String content;
 
+    /** 1 表示已由后台隐藏，仍保留本次评价记录。 */
+    private Integer hidden;
+
     /** 评价时间 */
     private LocalDateTime createTime;
 }

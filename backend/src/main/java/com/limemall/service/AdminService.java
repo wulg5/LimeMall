@@ -10,6 +10,7 @@ import com.limemall.entity.UmsAdminRole;
 import com.limemall.entity.UmsRole;
 import com.limemall.mapper.UmsAdminMapper;
 import com.limemall.mapper.UmsAdminRoleMapper;
+import com.limemall.mapper.UmsChatSessionMapper;
 import com.limemall.mapper.UmsRoleMapper;
 import com.limemall.vo.AdminVO;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class AdminService {
     private final UmsAdminMapper adminMapper;
     private final UmsAdminRoleMapper adminRoleMapper;
     private final UmsRoleMapper roleMapper;
+    private final UmsChatSessionMapper chatSessionMapper;
     private final PasswordEncoder passwordEncoder;
     private final com.limemall.security.CryptoService cryptoService;
 
@@ -148,6 +150,9 @@ public class AdminService {
         existing.setPhone(dto.getPhone());
         existing.setStatus(dto.getStatus());
         adminMapper.updateById(existing);
+        if (Integer.valueOf(0).equals(existing.getStatus())) {
+            chatSessionMapper.releaseOpenSessions(existing.getId());
+        }
         adminRoleMapper.delete(new LambdaQueryWrapper<UmsAdminRole>()
                 .eq(UmsAdminRole::getAdminId, dto.getId()));
         saveRoles(dto.getId(), dto.getRoleIds());
@@ -176,6 +181,7 @@ public class AdminService {
             throw new BusinessException("超级管理员账号不允许删除");
         }
         adminMapper.deleteById(id);
+        chatSessionMapper.releaseOpenSessions(id);
         adminRoleMapper.delete(new LambdaQueryWrapper<UmsAdminRole>()
                 .eq(UmsAdminRole::getAdminId, id));
     }

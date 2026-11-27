@@ -1,6 +1,7 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.limemall.common.BusinessException;
 import com.limemall.dto.ChangePasswordDTO;
 import com.limemall.dto.LoginDTO;
@@ -135,19 +136,16 @@ public class PortalAuthService {
                 throw new BusinessException("该手机号已被其他账号绑定");
             }
         }
-        UmsMember update = new UmsMember();
-        update.setId(memberId);
-        if (StringUtils.hasText(dto.getNickname())) {
-            update.setNickname(dto.getNickname().trim());
+        boolean changeNickname = StringUtils.hasText(dto.getNickname());
+        LambdaUpdateWrapper<UmsMember> update = new LambdaUpdateWrapper<UmsMember>()
+                .eq(UmsMember::getId, memberId)
+                .set(changeNickname, UmsMember::getNickname, changeNickname ? dto.getNickname().trim() : null)
+                .set(dto.isPhoneProvided(), UmsMember::getPhone, phone)
+                .set(dto.getGender() != null, UmsMember::getGender, dto.getGender())
+                .set(dto.isBirthdayProvided(), UmsMember::getBirthday, dto.getBirthday());
+        if (StringUtils.hasText(update.getSqlSet())) {
+            memberMapper.update(null, update);
         }
-        update.setPhone(phone);
-        if (dto.getGender() != null) {
-            update.setGender(dto.getGender());
-        }
-        if (dto.getBirthday() != null) {
-            update.setBirthday(dto.getBirthday());
-        }
-        memberMapper.updateById(update);
     }
 
     /** 会员修改密码（新旧密码均强制加密传输） */

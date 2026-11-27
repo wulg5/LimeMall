@@ -21,7 +21,7 @@ public interface SmsFlashSaleMapper extends BaseMapper<SmsFlashSale> {
             SELECT f.* FROM sms_flash_sale f
             JOIN pms_sku s ON s.id = f.sku_id
             WHERE f.status = 1 AND f.start_time &lt;= #{now} AND f.end_time &gt;= #{now}
-              AND f.flash_price &lt; s.price
+              AND f.flash_price &lt; s.price AND s.stock &gt; 0
             <if test="skuIds != null">
                 AND f.sku_id IN
                 <foreach collection="skuIds" item="skuId" open="(" separator="," close=")">#{skuId}</foreach>

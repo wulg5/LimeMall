@@ -23,6 +23,7 @@ public interface PmsCommentMapper extends BaseMapper<PmsComment> {
                    COUNT(*) AS commentCount,
                    ROUND(AVG(rating), 1) AS avgRating
             FROM pms_comment
+            WHERE hidden = 0
             GROUP BY product_id
             """)
     List<ProductRatingVO> selectAllRatings();
@@ -33,7 +34,7 @@ public interface PmsCommentMapper extends BaseMapper<PmsComment> {
     @Select("""
             SELECT COUNT(*) AS commentCount, ROUND(AVG(rating), 1) AS avgRating
             FROM pms_comment
-            WHERE product_id = #{productId}
+            WHERE product_id = #{productId} AND hidden = 0
             """)
     ProductRatingVO selectRatingByProduct(@Param("productId") Long productId);
 }

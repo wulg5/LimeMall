@@ -64,6 +64,33 @@
     </div>
     <el-empty v-else description="暂无相关订单" />
 
+    <el-dialog v-model="detailVisible" title="订单详情" width="min(680px, 92vw)">
+      <el-skeleton v-if="detailLoading" :rows="5" animated />
+      <template v-else-if="detail">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="订单号">{{ detail.orderSn }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ ORDER_STATUS[detail.status]?.text }}</el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ detail.createTime }}</el-descriptions-item>
+          <el-descriptions-item label="收货人">{{ detail.receiverName }} {{ detail.receiverPhone }}</el-descriptions-item>
+          <el-descriptions-item label="收货地址">{{ detail.receiverAddress }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.logisticsCompany" label="物流公司">{{ detail.logisticsCompany }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.logisticsSn" label="运单号">{{ detail.logisticsSn }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.deliveryTime" label="发货时间">{{ detail.deliveryTime }}</el-descriptions-item>
+          <el-descriptions-item label="订单金额">{{ money(detail.payAmount) }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="detail.items" size="small" class="detail-items">
+          <el-table-column prop="productName" label="商品" min-width="125" />
+          <el-table-column label="规格" min-width="100">
+            <template #default="{ row }">{{ specsToText(row.skuSpecs) || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="quantity" label="数量" width="65" />
+          <el-table-column label="小计" width="92">
+            <template #default="{ row }">{{ money(row.itemAmount) }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
+
     <!-- 评价弹窗 -->
     <el-dialog v-model="reviewVisible" title="评价商品" width="560px" destroy-on-close>
       <div class="review-list">
@@ -92,7 +119,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   cancelOrder, getMyOrderDetail, getMyOrders, payOrder, receiveOrder, refundOrder, submitComments
 } from '@/api/portal'
-import { isRefundActive, money, ORDER_STATUS, RETURN_STATUS } from '@/utils/format'
+import { isRefundActive, money, ORDER_STATUS, RETURN_STATUS, specsToText } from '@/utils/format'
 
 
 const activeTab = ref('all')
@@ -100,6 +127,10 @@ const list = ref([])
 const total = ref(0)
 const pageNum = ref(1)
 const pageSize = ref(5)
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref(null)
+let latestDetailRequest = 0
 
 const nowTs = ref(Date.now())
 let tickTimer = null
@@ -162,16 +193,19 @@ function handleTabChange() {
   load()
 }
 
-function openDetail(order) {
-  ElMessageBox.alert(
-    `<div style="line-height:1.9">
-      订单号：${order.orderSn}<br/>
-      下单时间：${order.createTime}<br/>
-      收货人：${order.receiverName} ${order.receiverPhone}
-    </div>`,
-    '订单信息',
-    { dangerouslyUseHTMLString: true, confirmButtonText: '知道了' }
-  )
+async function openDetail(order) {
+  const request = ++latestDetailRequest
+  detailVisible.value = true
+  detailLoading.value = true
+  detail.value = null
+  try {
+    const result = await getMyOrderDetail(order.id)
+    if (request === latestDetailRequest) detail.value = result
+  } catch {
+    if (request === latestDetailRequest) detailVisible.value = false
+  } finally {
+    if (request === latestDetailRequest) detailLoading.value = false
+  }
 }
 
 async function handlePay(order) {
@@ -403,6 +437,10 @@ async function submitReview() {
   font-size: 12px;
   color: #9ca3af;
   padding: 0 4px;
+}
+
+.detail-items {
+  margin-top: 16px;
 }
 
 .review-item {

@@ -6,6 +6,7 @@ import com.limemall.vo.ChatSessionVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -17,6 +18,9 @@ public interface UmsChatSessionMapper extends BaseMapper<UmsChatSession> {
 
     @Select("SELECT * FROM ums_chat_session WHERE id = #{id} FOR UPDATE")
     UmsChatSession lockById(Long id);
+
+    @Update("UPDATE ums_chat_session SET agent_id = NULL, assign_time = NULL WHERE agent_id = #{agentId} AND status = 0")
+    int releaseOpenSessions(Long agentId);
 
     /** 待接入队列：进行中且未被分配的会话 */
     @Select("""

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 
 const STORAGE_KEY = 'lime_cart'
+const BUY_NOW_KEY = 'lime_buy_now'
+const completedCartCheckouts = new Set()
 
 function loadCart() {
   try {
@@ -10,13 +12,22 @@ function loadCart() {
   }
 }
 
+function loadBuyNowItem() {
+  try {
+    return JSON.parse(sessionStorage.getItem(BUY_NOW_KEY) || 'null')
+  } catch {
+    return null
+  }
+}
+
 /**
  * 购物车 Store（localStorage 持久化）。
  * 购物车属于前端态设计：由前端维护，结算时才与后端库存校验，符合 B2C 电商常见做法。
  */
 export const useCartStore = defineStore('cart', {
   state: () => ({
-    items: loadCart()
+    items: loadCart(),
+    buyNowItem: loadBuyNowItem()
   }),
 
   getters: {
@@ -49,16 +60,23 @@ export const useCartStore = defineStore('cart', {
       this.persist()
     },
 
-    /** 立即购买：仅保留该商品为勾选状态 */
-    setOnly(item) {
-      this.items.forEach((it) => { it.checked = false })
-      const existing = this.items.find((it) => it.skuId === item.skuId)
-      if (existing) {
-        Object.assign(existing, item, { checked: true })
-      } else {
-        this.items.push({ ...item, checked: true })
+    setBuyNow(item) {
+      this.buyNowItem = { ...item }
+      try {
+        sessionStorage.setItem(BUY_NOW_KEY, JSON.stringify(this.buyNowItem))
+      } catch {
+        // 存储不可用时，本页仍可立即购买。
       }
-      this.persist()
+    },
+
+    clearBuyNow(item) {
+      if (this.buyNowItem !== item) return
+      this.buyNowItem = null
+      try {
+        sessionStorage.removeItem(BUY_NOW_KEY)
+      } catch {
+        // 当前购买项已从内存清除。
+      }
     },
 
     updateQuantity(skuId, quantity) {
@@ -87,10 +105,22 @@ export const useCartStore = defineStore('cart', {
       this.persist()
     },
 
-    /** 下单成功后移除已购买商品 */
-    removeChecked() {
-      this.items = this.items.filter((it) => !it.checked)
-      this.persist()
+    removePurchased(requestId, items) {
+      if (completedCartCheckouts.has(requestId)) return
+      completedCartCheckouts.add(requestId)
+      const quantities = new Map(items.map(({ skuId, quantity }) => [skuId, quantity]))
+      this.items = this.items.filter(item => {
+        if (!quantities.has(item.skuId)) return true
+        const remaining = item.quantity - quantities.get(item.skuId)
+        if (remaining <= 0) return false
+        item.quantity = remaining
+        return true
+      })
+      try {
+        this.persist()
+      } catch {
+        // 下单已成功，当前页面仍使用更新后的购物车。
+      }
     }
   }
 })
