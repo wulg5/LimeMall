@@ -33,6 +33,9 @@ public class OmsOrder {
     /** 已打开收银台的订单上次接受渠道查询的时间。 */
     private LocalDateTime paymentCheckTime;
 
+    /** 首次打开支付宝收银台时绑定的渠道配置。 */
+    private String paymentProfileId;
+
     /** 商品总额 */
     private BigDecimal totalAmount;
 

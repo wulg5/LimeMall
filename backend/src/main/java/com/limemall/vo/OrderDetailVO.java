@@ -61,6 +61,8 @@ public class OrderDetailVO {
     /** 订单明细 */
     private List<OmsOrderItem> items;
 
+    private List<Long> reviewedProductIds = List.of();
+
     /** 退款申请（如有） */
     private OmsOrderReturn returnApply;
 }

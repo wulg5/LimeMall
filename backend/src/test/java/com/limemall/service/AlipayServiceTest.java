@@ -3,7 +3,9 @@ package com.limemall.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.limemall.common.BusinessException;
 import com.limemall.config.AlipayProperties;
+import com.limemall.dto.PayConfigSaveDTO;
 import com.limemall.entity.OmsOrder;
+import com.limemall.mapper.AlipayChannelProfileMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +22,7 @@ import java.security.Signature;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,6 +30,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +43,8 @@ class AlipayServiceTest {
     private final AtomicInteger requests = new AtomicInteger();
     private final AtomicReference<String> tradeStatus = new AtomicReference<>("TRADE_SUCCESS");
     private HttpServer gateway;
+    private KeyPair provider;
+    private final Map<String, String> profiles = new HashMap<>();
     private SysConfigService settings;
     private AlipayService service;
 
@@ -45,7 +53,7 @@ class AlipayServiceTest {
         KeyPairGenerator keys = KeyPairGenerator.getInstance("RSA");
         keys.initialize(2048);
         KeyPair merchant = keys.generateKeyPair();
-        KeyPair provider = keys.generateKeyPair();
+        provider = keys.generateKeyPair();
         gateway = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         gateway.createContext("/", exchange -> {
             try (exchange) {
@@ -65,6 +73,7 @@ class AlipayServiceTest {
                     assertTrue(verifier.verify(Base64.getDecoder().decode(signature)));
                     var biz = json.readTree(params.get("biz_content"));
                     assertEquals("LM-fixture", biz.path("out_trade_no").asText());
+                    assertEquals("test-only", params.get("app_id"));
                     String method = params.get("method");
                     var result = json.createObjectNode().put("code", "10000").put("out_trade_no", "LM-fixture");
                     switch (method) {
@@ -110,7 +119,13 @@ class AlipayServiceTest {
         config.setGatewayUrl("http://127.0.0.1:" + gateway.getAddress().getPort());
         settings = mock(SysConfigService.class);
         when(settings.getAll()).thenReturn(Map.of(AlipayService.KEY_ENABLED, "0"));
-        service = new AlipayService(config, json, settings);
+        AlipayChannelProfileMapper profileMapper = mock(AlipayChannelProfileMapper.class);
+        when(profileMapper.find(anyString())).thenAnswer(call -> profiles.get(call.getArgument(0)));
+        doAnswer(call -> {
+            profiles.putIfAbsent(call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(profileMapper).remember(anyString(), anyString());
+        service = new AlipayService(config, json, settings, profileMapper);
     }
 
     @AfterEach
@@ -121,9 +136,9 @@ class AlipayServiceTest {
     @Test
     void waitsForConfirmedRefundAndReusesRequestNumberOnRetry() {
         BigDecimal amount = new BigDecimal("94.52");
-        assertFalse(service.refund("LM-fixture", amount));
+        assertFalse(service.refund(order(), amount));
         confirmed.set(true);
-        assertTrue(service.refund("LM-fixture", amount));
+        assertTrue(service.refund(order(), amount));
         assertEquals(4, requests.get());
     }
 
@@ -139,7 +154,7 @@ class AlipayServiceTest {
                 AlipayService.KEY_RETURN_URL, "http://localhost:5173/shop/orders?from=x%20y"));
         assertTrue(service.isEnabled());
         var params = URI.create(service.buildPagePayUrl(
-                order(), LocalDateTime.now().plusMinutes(10), "127.0.0.1")).getRawQuery();
+                order(), LocalDateTime.now().plusMinutes(10), "127.0.0.1").url()).getRawQuery();
         assertTrue(URLDecoder.decode(params, StandardCharsets.UTF_8)
                 .contains("return_url=http://127.0.0.1:5173/shop/orders?from=x%20y"));
     }
@@ -165,6 +180,52 @@ class AlipayServiceTest {
         assertEquals(3, requests.get());
     }
 
+    @Test
+    void olderOrdersUseTheirOriginalChannelAfterApplicationChange() throws Exception {
+        Map<String, String> active = new HashMap<>(Map.of(AlipayService.KEY_ENABLED, "1",
+                AlipayService.KEY_NOTIFY_URL, "https://notify.example.test/notify"));
+        when(settings.getAll()).thenAnswer(call -> new HashMap<>(active));
+        doAnswer(call -> {
+            active.put(call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(settings).put(anyString(), anyString(), any());
+
+        LocalDateTime deadline = LocalDateTime.now().plusMinutes(10);
+        OmsOrder pinned = order();
+        var pay = service.buildPagePayUrl(pinned, deadline, null);
+        pinned.setPaymentProfileId(pay.profileId());
+
+        PayConfigSaveDTO replacement = new PayConfigSaveDTO();
+        replacement.setEnabled(true);
+        replacement.setAppId("new-application");
+        replacement.setGatewayUrl("http://127.0.0.1:1");
+        KeyPair replacementKeys = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+        replacement.setMerchantPrivateKey(Base64.getEncoder().encodeToString(replacementKeys.getPrivate().getEncoded()));
+        replacement.setAlipayPublicKey(Base64.getEncoder().encodeToString(replacementKeys.getPublic().getEncoded()));
+        service.saveConfig(replacement);
+
+        var retry = service.buildPagePayUrl(pinned, deadline, null);
+        assertEquals(pay.profileId(), retry.profileId());
+        assertTrue(retry.url().contains("app_id=test-only"));
+        assertTrue(service.buildPagePayUrl(order(), deadline, null).url().contains("app_id=new-application"));
+
+        Map<String, String> notification = new TreeMap<>(Map.of("app_id", "test-only", "out_trade_no", "LM-fixture"));
+        Signature signer = Signature.getInstance("SHA256withRSA");
+        signer.initSign(provider.getPrivate());
+        signer.update("app_id=test-only&out_trade_no=LM-fixture".getBytes(StandardCharsets.UTF_8));
+        notification.put("sign", Base64.getEncoder().encodeToString(signer.sign()));
+        assertTrue(service.verifyNotify(pinned, notification));
+        assertTrue(service.verifyNotify(order(), notification));
+        notification.put("app_id", "new-application");
+        assertFalse(service.verifyNotify(pinned, notification));
+
+        assertNotNull(service.checkPayment(pinned, false).paidAt());
+        confirmed.set(true);
+        assertTrue(service.refund(pinned, pinned.getPayAmount()));
+        assertTrue(service.refund(order(), pinned.getPayAmount()));
+        assertEquals(5, requests.get());
+    }
+
     private OmsOrder order() {
         OmsOrder order = new OmsOrder();
         order.setOrderSn("LM-fixture");
@@ -176,7 +237,7 @@ class AlipayServiceTest {
     @Test
     void rejectsTamperedProviderResponse() {
         tampered.set(true);
-        assertThrows(BusinessException.class, () -> service.refund("LM-fixture", new BigDecimal("94.52")));
+        assertThrows(BusinessException.class, () -> service.refund(order(), new BigDecimal("94.52")));
         assertEquals(1, requests.get());
     }
 }

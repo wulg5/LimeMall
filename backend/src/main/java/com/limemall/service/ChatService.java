@@ -65,6 +65,12 @@ public class ChatService {
         Map<String, Object> data = new HashMap<>();
         UmsChatSession session = findOpenSession(memberId, false);
         if (session == null) {
+            session = sessionMapper.selectOne(new LambdaQueryWrapper<UmsChatSession>()
+                    .eq(UmsChatSession::getMemberId, memberId)
+                    .eq(UmsChatSession::getStatus, SESSION_ENDED)
+                    .orderByDesc(UmsChatSession::getId).last("LIMIT 1"));
+        }
+        if (session == null) {
             data.put("session", null);
             data.put("messages", List.of());
             return data;
@@ -216,7 +222,10 @@ public class ChatService {
     @Transactional
     public void agentSend(Long adminId, Long sessionId, String content) {
         String text = validateContent(content);
-        UmsChatSession session = loadSession(sessionId);
+        UmsChatSession session = sessionMapper.lockById(sessionId);
+        if (session == null) {
+            throw new BusinessException("会话不存在");
+        }
         if (session.getStatus() != SESSION_OPEN) {
             throw new BusinessException("会话已结束，无法回复");
         }

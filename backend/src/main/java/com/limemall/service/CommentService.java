@@ -52,7 +52,7 @@ public class CommentService {
      */
     @Transactional
     public int submit(Long memberId, CommentSubmitDTO dto) {
-        OmsOrder order = orderMapper.selectById(dto.getOrderId());
+        OmsOrder order = orderMapper.lockById(dto.getOrderId());
         if (order == null || !order.getMemberId().equals(memberId)) {
             throw new BusinessException("订单不存在");
         }

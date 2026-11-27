@@ -211,6 +211,7 @@ CREATE TABLE `oms_order` (
   `member_id`        BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
   `checkout_request_id` CHAR(32) DEFAULT NULL COMMENT '结算请求号',
   `payment_check_time` DATETIME DEFAULT NULL COMMENT '已发起支付的最近查单时间',
+  `payment_profile_id` VARCHAR(64) DEFAULT NULL COMMENT '原支付渠道配置编号',
   `total_amount`     DECIMAL(10,2) NOT NULL COMMENT '商品总额',
   `coupon_amount`    DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '优惠券抵扣金额',
   `freight_amount`   DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '运费',
@@ -490,6 +491,12 @@ CREATE TABLE `sys_config` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_key` (`cfg_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统参数配置（后台可视化维护）';
+
+DROP TABLE IF EXISTS alipay_channel_profile;
+CREATE TABLE alipay_channel_profile (
+    id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+    channel_config TEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支付宝订单对应的历史渠道配置';
 
 -- =====================================================================
 -- 基础数据

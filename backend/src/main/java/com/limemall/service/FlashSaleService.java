@@ -122,12 +122,7 @@ public class FlashSaleService {
         if (skuIds == null || skuIds.isEmpty()) {
             return Map.of();
         }
-        LocalDateTime now = LocalDateTime.now();
-        return flashSaleMapper.selectList(new LambdaQueryWrapper<SmsFlashSale>()
-                        .in(SmsFlashSale::getSkuId, skuIds)
-                        .eq(SmsFlashSale::getStatus, 1)
-                        .le(SmsFlashSale::getStartTime, now)
-                        .ge(SmsFlashSale::getEndTime, now))
+        return flashSaleMapper.selectActiveDiscounts(LocalDateTime.now(), skuIds)
                 .stream().collect(Collectors.toMap(SmsFlashSale::getSkuId, Function.identity()));
     }
 
@@ -150,11 +145,6 @@ public class FlashSaleService {
     }
 
     private List<SmsFlashSale> activeFlashes() {
-        LocalDateTime now = LocalDateTime.now();
-        return flashSaleMapper.selectList(new LambdaQueryWrapper<SmsFlashSale>()
-                .eq(SmsFlashSale::getStatus, 1)
-                .le(SmsFlashSale::getStartTime, now)
-                .ge(SmsFlashSale::getEndTime, now)
-                .orderByDesc(SmsFlashSale::getId));
+        return flashSaleMapper.selectActiveDiscounts(LocalDateTime.now(), null);
     }
 }

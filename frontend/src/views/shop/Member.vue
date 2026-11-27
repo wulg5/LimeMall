@@ -32,7 +32,8 @@
 
       <div v-if="info.expiringPoints > 0" class="expire-tip">
         <span class="dot"></span>
-        有 {{ info.expiringPoints }} 积分将于 {{ info.expiringDate || '近期' }} 过期，快去积分商城兑换吧
+        未来 30 天有 {{ info.expiringPoints }} 积分到期
+        <span v-if="info.expiringDate">，最近到期日为 {{ info.expiringDate }}</span>
         <el-button link type="warning" @click="$router.push('/shop/points')">去兑换 &gt;</el-button>
       </div>
       <div class="progress-block">

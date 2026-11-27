@@ -37,12 +37,13 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { getCategories, getProducts } from '@/api/portal'
 import ProductCard from '@/components/ProductCard.vue'
 
 const route = useRoute()
+const router = useRouter()
 
 const keyword = ref('')
 const categoryId = ref(null)
@@ -63,7 +64,7 @@ watch(() => route.query, (query) => {
   keyword.value = query.name || ''
   categoryId.value = query.categoryId ? Number(query.categoryId) : null
   sort.value = query.sort || ''
-  handleSearch()
+  resetResults()
 }, { immediate: true })
 
 async function load() {
@@ -72,9 +73,9 @@ async function load() {
     const data = await getProducts({
       pageNum: pageNum.value,
       pageSize: pageSize.value,
-      name: keyword.value || undefined,
-      categoryId: categoryId.value || undefined,
-      sort: sort.value || undefined
+      name: route.query.name || undefined,
+      categoryId: route.query.categoryId || undefined,
+      sort: route.query.sort || undefined
     })
     if (request === latestRequest) {
       list.value = data.records
@@ -88,7 +89,16 @@ async function load() {
   }
 }
 
-function handleSearch() {
+async function handleSearch() {
+  const failure = await router.push({ query: {
+    name: keyword.value || undefined,
+    categoryId: categoryId.value || undefined,
+    sort: sort.value || undefined
+  } })
+  if (isNavigationFailure(failure, NavigationFailureType.duplicated)) resetResults()
+}
+
+function resetResults() {
   pageNum.value = 1
   list.value = []
   total.value = 0

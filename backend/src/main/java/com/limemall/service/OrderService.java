@@ -435,11 +435,24 @@ public class OrderService {
             markPaid(order, LocalDateTime.now());
             return Map.of("paid", true);
         }
-        String payUrl = alipayService.buildPagePayUrl(order, paymentDeadline, returnHost);
-        if (order.getPaymentCheckTime() == null) {
-            setPaymentCheckTime(order.getId(), LocalDateTime.now());
+        AlipayService.PaymentPage page = alipayService.buildPagePayUrl(order, paymentDeadline, returnHost);
+        if (order.getPaymentCheckTime() == null || order.getPaymentProfileId() == null) {
+            orderMapper.update(null, new LambdaUpdateWrapper<OmsOrder>()
+                    .set(OmsOrder::getPaymentProfileId, page.profileId())
+                    .set(order.getPaymentCheckTime() == null, OmsOrder::getPaymentCheckTime, LocalDateTime.now())
+                    .eq(OmsOrder::getId, order.getId()));
         }
-        return Map.of("payUrl", payUrl);
+        return Map.of("payUrl", page.url());
+    }
+
+    @Transactional(readOnly = true)
+    public boolean verifyPaymentNotice(String orderSn, Map<String, String> params) {
+        if (!StringUtils.hasText(orderSn)) {
+            return false;
+        }
+        OmsOrder order = orderMapper.selectOne(new LambdaQueryWrapper<OmsOrder>()
+                .eq(OmsOrder::getOrderSn, orderSn));
+        return order != null && alipayService.verifyNotify(order, params);
     }
 
     public List<OmsOrder> listOrdersForPaymentCheck(LocalDateTime checkBefore) {
@@ -554,7 +567,8 @@ public class OrderService {
             int payYuan = order.getPayAmount().intValue();
             int currentGrowth = member.getGrowth() == null ? 0 : member.getGrowth();
             int currentPoints = member.getPoints() == null ? 0 : member.getPoints();
-            int earnedPoints = (int) ((long) payYuan * MemberLevels.pointPercent(member.getLevel()) / 100);
+            int earnedPoints = order.getPayAmount()
+                    .multiply(BigDecimal.valueOf(MemberLevels.pointPercent(member.getLevel()), 2)).intValue();
             int newGrowth = currentGrowth + payYuan;
             UmsMember memberUpdate = new UmsMember();
             memberUpdate.setId(member.getId());
@@ -759,10 +773,11 @@ public class OrderService {
         Map<Long, UmsMember> memberMap = memberMapper.selectBatchIds(
                         orders.stream().map(OmsOrder::getMemberId).distinct().toList())
                 .stream().collect(Collectors.toMap(UmsMember::getId, Function.identity()));
-        Set<Long> commentedOrderIds = commentMapper.selectList(new LambdaQueryWrapper<PmsComment>()
-                        .select(PmsComment::getOrderId)
+        Map<Long, Set<Long>> reviewedProducts = commentMapper.selectList(new LambdaQueryWrapper<PmsComment>()
+                        .select(PmsComment::getOrderId, PmsComment::getProductId)
                         .in(PmsComment::getOrderId, orderIds))
-                .stream().map(PmsComment::getOrderId).collect(Collectors.toSet());
+                .stream().collect(Collectors.groupingBy(PmsComment::getOrderId,
+                        Collectors.mapping(PmsComment::getProductId, Collectors.toSet())));
 
         Map<Long, Integer> refundStatuses = returnMapper.selectList(new LambdaQueryWrapper<OmsOrderReturn>()
                         .select(OmsOrderReturn::getOrderId, OmsOrderReturn::getStatus)
@@ -775,7 +790,6 @@ public class OrderService {
             BeanUtils.copyProperties(order, vo);
             UmsMember member = memberMap.get(order.getMemberId());
             vo.setMemberNickname(member == null ? "" : member.getNickname());
-            vo.setCommented(commentedOrderIds.contains(order.getId()));
             vo.setRefundStatus(refundStatuses.get(order.getId()));
             if (order.getStatus() == STATUS_UNPAID) {
                 vo.setPaymentDeadline(paymentDeadline(order));
@@ -784,6 +798,8 @@ public class OrderService {
                 vo.setReturnDeadline(returnDeadline(order));
             }
             List<OmsOrderItem> items = itemsMap.getOrDefault(order.getId(), List.of());
+            Set<Long> reviewed = reviewedProducts.getOrDefault(order.getId(), Set.of());
+            vo.setCommented(!items.isEmpty() && items.stream().allMatch(item -> reviewed.contains(item.getProductId())));
             vo.setItemCount(items.stream().mapToInt(OmsOrderItem::getQuantity).sum());
             if (!items.isEmpty()) {
                 vo.setFirstItemName(items.get(0).getProductName());
@@ -805,6 +821,11 @@ public class OrderService {
             vo.setMemberNickname(member.getNickname());
         }
         vo.setItems(listItems(order.getId()));
+        if (order.getStatus() == STATUS_COMPLETED) {
+            vo.setReviewedProductIds(commentMapper.selectList(new LambdaQueryWrapper<PmsComment>()
+                            .select(PmsComment::getProductId).eq(PmsComment::getOrderId, order.getId()))
+                    .stream().map(PmsComment::getProductId).toList());
+        }
         vo.setReturnApply(returnMapper.selectOne(new LambdaQueryWrapper<OmsOrderReturn>()
                 .eq(OmsOrderReturn::getOrderId, order.getId())
                 .orderByDesc(OmsOrderReturn::getId)

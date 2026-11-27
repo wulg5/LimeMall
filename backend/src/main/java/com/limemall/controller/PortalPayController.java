@@ -1,6 +1,5 @@
 package com.limemall.controller;
 
-import com.limemall.service.AlipayService;
 import com.limemall.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,25 +27,20 @@ public class PortalPayController {
 
     private static final DateTimeFormatter PROVIDER_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private final AlipayService alipayService;
     private final OrderService orderService;
 
     @PostMapping("/alipay/notify")
     public String alipayNotify(@RequestParam Map<String, String> params) {
-        if (!alipayService.verifyNotify(params)) {
-            log.warn("支付宝回调验签失败，out_trade_no={}", params.get("out_trade_no"));
-            return "failure";
-        }
-        if (params.get("app_id") == null || !params.get("app_id").equals(alipayService.getAppId())) {
-            log.warn("支付宝回调 app_id 不匹配：{}", params.get("app_id"));
-            return "failure";
-        }
-        String tradeStatus = params.get("trade_status");
-        if (!"TRADE_SUCCESS".equals(tradeStatus) && !"TRADE_FINISHED".equals(tradeStatus)) {
-            return "success";
-        }
         String orderSn = params.get("out_trade_no");
         try {
+            if (!orderService.verifyPaymentNotice(orderSn, params)) {
+                log.warn("支付宝回调验签失败，out_trade_no={}", orderSn);
+                return "failure";
+            }
+            String tradeStatus = params.get("trade_status");
+            if (!"TRADE_SUCCESS".equals(tradeStatus) && !"TRADE_FINISHED".equals(tradeStatus)) {
+                return "success";
+            }
             String providerTime = params.get("gmt_payment");
             LocalDateTime paidAt = providerTime == null || providerTime.isBlank() ? LocalDateTime.now()
                     : LocalDateTime.parse(providerTime, PROVIDER_TIME).atZone(ZoneId.of("Asia/Shanghai"))

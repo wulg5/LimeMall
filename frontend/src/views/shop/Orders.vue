@@ -249,9 +249,15 @@ const reviewItems = ref([])
 
 async function openReview(order) {
   const detail = await getMyOrderDetail(order.id)
-  reviewOrder.value = order
+  const reviewed = new Set(detail.reviewedProductIds || [])
   const products = new Map((detail.items || []).map(item => [item.productId, item]))
-  reviewItems.value = [...products.values()].map((item) => ({
+  const remaining = [...products.values()].filter(item => !reviewed.has(item.productId))
+  if (!remaining.length) {
+    await load()
+    return
+  }
+  reviewOrder.value = order
+  reviewItems.value = remaining.map((item) => ({
     productId: item.productId,
     productName: item.productName,
     pic: item.productPic,

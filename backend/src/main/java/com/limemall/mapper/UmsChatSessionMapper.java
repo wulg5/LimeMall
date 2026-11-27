@@ -15,6 +15,9 @@ import java.util.List;
 @Mapper
 public interface UmsChatSessionMapper extends BaseMapper<UmsChatSession> {
 
+    @Select("SELECT * FROM ums_chat_session WHERE id = #{id} FOR UPDATE")
+    UmsChatSession lockById(Long id);
+
     /** 待接入队列：进行中且未被分配的会话 */
     @Select("""
             SELECT s.id AS id, s.member_id AS memberId, m.nickname AS memberNickname,

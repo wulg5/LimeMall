@@ -3,6 +3,7 @@ package com.limemall.job;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.limemall.entity.OmsOrderReturn;
+import com.limemall.mapper.OmsOrderMapper;
 import com.limemall.mapper.OmsOrderReturnMapper;
 import com.limemall.service.AlipayService;
 import com.limemall.service.OrderReturnService;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 public class OrderRefundJob {
 
     private final OmsOrderReturnMapper returnMapper;
+    private final OmsOrderMapper orderMapper;
     private final OrderReturnService returnService;
     private final AlipayService alipayService;
 
@@ -40,7 +42,7 @@ public class OrderRefundJob {
                 if (claimed == 0) {
                     continue;
                 }
-                if (refund.getAmount().signum() == 0 || alipayService.refund(refund.getOrderSn(), refund.getAmount())) {
+                if (refund.getAmount().signum() == 0 || alipayService.refund(orderMapper.selectById(refund.getOrderId()), refund.getAmount())) {
                     returnService.confirmRefund(refund);
                 } else {
                     log.warn("退款待支付渠道确认，稍后重试 orderSn={}", refund.getOrderSn());

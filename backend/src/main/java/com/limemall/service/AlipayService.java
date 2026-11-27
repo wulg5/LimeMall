@@ -7,6 +7,7 @@ import com.limemall.common.BusinessException;
 import com.limemall.config.AlipayProperties;
 import com.limemall.dto.PayConfigSaveDTO;
 import com.limemall.entity.OmsOrder;
+import com.limemall.mapper.AlipayChannelProfileMapper;
 import com.limemall.vo.PayConfigVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -35,6 +38,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -63,6 +67,7 @@ public class AlipayService {
     public static final String KEY_NOTIFY_URL = "alipay.notify-url";
     public static final String KEY_RETURN_URL = "alipay.return-url";
 
+    private static final String LEGACY_PROFILE = "legacy";
     private static final ZoneId ALIPAY_ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter ALIPAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -70,11 +75,10 @@ public class AlipayService {
     private final AlipayProperties envProperties;
     private final ObjectMapper objectMapper;
     private final SysConfigService configService;
+    private final AlipayChannelProfileMapper profileMapper;
 
-    private volatile String cachedPrivateRaw;
-    private volatile PrivateKey cachedPrivateKey;
-    private volatile String cachedPublicRaw;
-    private volatile PublicKey cachedPublicKey;
+    private volatile CachedKey<PrivateKey> cachedPrivate;
+    private volatile CachedKey<PublicKey> cachedPublic;
 
     /** 后台配置优先，环境变量兜底。收款需要完整密钥和异步通知地址。 */
     private ResolvedConfig resolve() {
@@ -86,14 +90,13 @@ public class AlipayService {
         String notifyUrl = firstNonBlank(db.get(KEY_NOTIFY_URL), envProperties.getNotifyUrl());
         String returnUrl = firstNonBlank(db.get(KEY_RETURN_URL), envProperties.getReturnUrl());
         String enabledFlag = db.get(KEY_ENABLED);
-        boolean keysReady = StringUtils.hasText(appId)
-                && StringUtils.hasText(privateKey) && StringUtils.hasText(publicKey);
+        ChannelConfig channel = new ChannelConfig(appId, privateKey, publicKey, gatewayUrl);
+        boolean keysReady = channel.hasKeys();
         boolean enabled = keysReady && validNotifyUrl(notifyUrl)
                 && (StringUtils.hasText(enabledFlag) ? "1".equals(enabledFlag.trim()) : true);
         String mode = db.keySet().stream().anyMatch(key -> key.startsWith("alipay."))
                 ? "db" : (keysReady ? "env" : "none");
-        return new ResolvedConfig(enabled, appId, privateKey, publicKey,
-                gatewayUrl, notifyUrl, returnUrl, mode);
+        return new ResolvedConfig(enabled, channel, notifyUrl, returnUrl, mode);
     }
 
     /** 支付是否可用（未配置时前台发起支付将明确报错，不提供模拟入账） */
@@ -101,23 +104,20 @@ public class AlipayService {
         return resolve().enabled();
     }
 
-    public String getAppId() {
-        return resolve().appId();
-    }
-
     /** 后台配置页视图（密钥脱敏） */
     public PayConfigVO describe() {
         ResolvedConfig config = resolve();
+        ChannelConfig channel = config.channel();
         PayConfigVO vo = new PayConfigVO();
         vo.setEnabled(config.enabled());
-        vo.setAppId(config.appId());
-        vo.setGatewayUrl(config.gatewayUrl());
+        vo.setAppId(channel.appId());
+        vo.setGatewayUrl(channel.gatewayUrl());
         vo.setNotifyUrl(config.notifyUrl());
         vo.setReturnUrl(config.returnUrl());
-        vo.setPrivateKeyConfigured(StringUtils.hasText(config.privateKey()));
-        vo.setPrivateKeyPreview(mask(config.privateKey()));
-        vo.setPublicKeyConfigured(StringUtils.hasText(config.publicKey()));
-        vo.setPublicKeyPreview(mask(config.publicKey()));
+        vo.setPrivateKeyConfigured(StringUtils.hasText(channel.privateKey()));
+        vo.setPrivateKeyPreview(mask(channel.privateKey()));
+        vo.setPublicKeyConfigured(StringUtils.hasText(channel.publicKey()));
+        vo.setPublicKeyPreview(mask(channel.publicKey()));
         vo.setMode(config.mode());
         return vo;
     }
@@ -125,8 +125,9 @@ public class AlipayService {
     /** 保存后台配置（密钥留空 = 保持不变） */
     @Transactional
     public void saveConfig(PayConfigSaveDTO dto) {
+        ResolvedConfig previous = resolve();
         if (Boolean.TRUE.equals(dto.getEnabled())
-                && !validNotifyUrl(firstNonBlank(dto.getNotifyUrl(), resolve().notifyUrl()))) {
+                && !validNotifyUrl(firstNonBlank(dto.getNotifyUrl(), previous.notifyUrl()))) {
             throw new BusinessException("启用支付宝支付前，请填写公网可访问的异步通知地址");
         }
         configService.put(KEY_ENABLED, Boolean.TRUE.equals(dto.getEnabled()) ? "1" : "0", "支付宝启用开关");
@@ -148,16 +149,25 @@ public class AlipayService {
         if (StringUtils.hasText(dto.getReturnUrl())) {
             configService.put(KEY_RETURN_URL, dto.getReturnUrl().trim(), "同步跳转地址");
         }
+        if (previous.channel().hasKeys() && !previous.channel().equals(resolve().channel())) {
+            profileMapper.remember(LEGACY_PROFILE, encodeProfile(previous.channel()));
+        }
     }
 
     /**
      * 构建电脑网站支付跳转 URL（跳转支付宝收银台）。
      */
-    public String buildPagePayUrl(OmsOrder order, LocalDateTime paymentDeadline, String returnHost) {
+    public PaymentPage buildPagePayUrl(OmsOrder order, LocalDateTime paymentDeadline, String returnHost) {
         ResolvedConfig config = resolve();
         if (!config.enabled()) {
             throw new BusinessException("支付功能尚未配置，请联系管理员");
         }
+        String profileId = order.getPaymentProfileId();
+        if (profileId == null && order.getPaymentCheckTime() != null
+                && profileMapper.find(LEGACY_PROFILE) != null) {
+            profileId = LEGACY_PROFILE;
+        }
+        ChannelConfig channel = profileId == null ? config.channel() : requireProfile(profileId);
         String bizContent = "{"
                 + "\"out_trade_no\":\"" + order.getOrderSn() + "\","
                 + "\"product_code\":\"FAST_INSTANT_TRADE_PAY\","
@@ -166,12 +176,61 @@ public class AlipayService {
                 .withZoneSameInstant(ALIPAY_ZONE).format(ALIPAY_TIME) + "\","
                 + "\"subject\":\"青柠商城订单 " + order.getOrderSn() + "\""
                 + "}";
-        TreeMap<String, String> params = requestParameters(config, "alipay.trade.page.pay", bizContent);
+        TreeMap<String, String> params = requestParameters(channel, "alipay.trade.page.pay", bizContent);
         params.put("notify_url", config.notifyUrl().trim());
         if (StringUtils.hasText(config.returnUrl())) {
             params.put("return_url", paymentReturnUrl(config.returnUrl(), returnHost));
         }
-        return config.gatewayUrl() + "?" + signAndEncode(config, params);
+        String url = channel.gatewayUrl() + "?" + signAndEncode(channel, params);
+        return new PaymentPage(url, profileId == null ? rememberProfile(channel) : profileId);
+    }
+
+    public record PaymentPage(String url, String profileId) {}
+
+    private String rememberProfile(ChannelConfig channel) {
+        String payload = encodeProfile(channel);
+        try {
+            String id = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(payload.getBytes(StandardCharsets.UTF_8)));
+            if (profileMapper.find(id) == null) {
+                profileMapper.remember(id, payload);
+            }
+            return id;
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
+    }
+
+    private String encodeProfile(ChannelConfig channel) {
+        try {
+            return objectMapper.writeValueAsString(channel);
+        } catch (IOException e) {
+            throw new IllegalStateException("无法保存支付宝渠道配置", e);
+        }
+    }
+
+    private ChannelConfig requireProfile(String id) {
+        String stored = profileMapper.find(id);
+        if (stored == null) {
+            throw new BusinessException("订单对应的支付宝渠道配置不存在");
+        }
+        return decodeProfile(stored);
+    }
+
+    private ChannelConfig channelFor(OmsOrder order) {
+        if (order.getPaymentProfileId() != null) {
+            return requireProfile(order.getPaymentProfileId());
+        }
+        String legacy = profileMapper.find(LEGACY_PROFILE);
+        return legacy == null ? resolve().channel() : decodeProfile(legacy);
+    }
+
+    private ChannelConfig decodeProfile(String payload) {
+        try {
+            return objectMapper.readValue(payload, ChannelConfig.class);
+        } catch (IOException e) {
+            throw new BusinessException("订单对应的支付宝渠道配置无法读取");
+        }
     }
 
     private static boolean validNotifyUrl(String url) {
@@ -203,10 +262,10 @@ public class AlipayService {
 
     /** 查单响应验签后才可入账，超时仍在等待付款时先关闭支付宝交易。 */
     public PaymentCheck checkPayment(OmsOrder order, boolean expired) {
-        ResolvedConfig config = resolve();
-        requireChannelKeys(config);
+        ChannelConfig channel = channelFor(order);
+        requireChannelKeys(channel);
         var identity = objectMapper.createObjectNode().put("out_trade_no", order.getOrderSn());
-        JsonNode result = gatewayCall(config, "alipay.trade.query", identity);
+        JsonNode result = gatewayCall(channel, "alipay.trade.query", identity);
         if ("40004".equals(result.path("code").asText())
                 && "ACQ.TRADE_NOT_EXIST".equals(result.path("sub_code").asText())) {
             return new PaymentCheck(null, expired);
@@ -231,7 +290,7 @@ public class AlipayService {
             }
             case "TRADE_CLOSED" -> new PaymentCheck(null, true);
             case "WAIT_BUYER_PAY" -> new PaymentCheck(null, (expired || order.getStatus() == OrderService.STATUS_CLOSED)
-                    && isSuccessfulTradeResponse(order, gatewayCall(config, "alipay.trade.close", identity)));
+                    && isSuccessfulTradeResponse(order, gatewayCall(channel, "alipay.trade.close", identity)));
             default -> throw new BusinessException("支付宝查单返回未知交易状态");
         };
     }
@@ -244,14 +303,18 @@ public class AlipayService {
     public record PaymentCheck(LocalDateTime paidAt, boolean finished) {}
 
     /** 全额原路退款。用商户订单号派生固定请求号，重试与查询均使用同一号码。 */
-    public boolean refund(String orderSn, BigDecimal amount) {
-        ResolvedConfig config = resolve();
+    public boolean refund(OmsOrder order, BigDecimal amount) {
+        if (order == null) {
+            throw new BusinessException("退款订单不存在");
+        }
+        String orderSn = order.getOrderSn();
+        ChannelConfig channel = channelFor(order);
         // 即使暂停收新款，也必须能处理已付款订单的退款。
-        requireChannelKeys(config);
+        requireChannelKeys(channel);
         String refundNo = "LMRF-" + orderSn;
         var identity = objectMapper.createObjectNode()
                 .put("out_trade_no", orderSn).put("out_request_no", refundNo);
-        JsonNode result = gatewayCall(config, "alipay.trade.refund",
+        JsonNode result = gatewayCall(channel, "alipay.trade.refund",
                 identity.deepCopy().put("refund_amount", amount.toPlainString()));
         if ("10000".equals(result.path("code").asText())
                 && "Y".equals(result.path("fund_change").asText())
@@ -259,7 +322,7 @@ public class AlipayService {
                 && sameAmount(amount, result.path("refund_fee"))) {
             return true;
         }
-        JsonNode query = gatewayCall(config, "alipay.trade.fastpay.refund.query", identity);
+        JsonNode query = gatewayCall(channel, "alipay.trade.fastpay.refund.query", identity);
         return "10000".equals(query.path("code").asText())
                 && "REFUND_SUCCESS".equals(query.path("refund_status").asText())
                 && orderSn.equals(query.path("out_trade_no").asText())
@@ -267,9 +330,8 @@ public class AlipayService {
                 && sameAmount(amount, query.path("refund_amount"));
     }
 
-    private void requireChannelKeys(ResolvedConfig config) {
-        if (!StringUtils.hasText(config.appId()) || !StringUtils.hasText(config.privateKey())
-                || !StringUtils.hasText(config.publicKey())) {
+    private void requireChannelKeys(ChannelConfig channel) {
+        if (!channel.hasKeys()) {
             throw new BusinessException("支付宝密钥未配置，等待渠道处理");
         }
     }
@@ -282,19 +344,19 @@ public class AlipayService {
         }
     }
 
-    private JsonNode gatewayCall(ResolvedConfig config, String method, JsonNode content) {
+    private JsonNode gatewayCall(ChannelConfig channel, String method, JsonNode content) {
         try {
-            TreeMap<String, String> params = requestParameters(config, method, objectMapper.writeValueAsString(content));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(config.gatewayUrl()))
+            TreeMap<String, String> params = requestParameters(channel, method, objectMapper.writeValueAsString(content));
+            HttpRequest request = HttpRequest.newBuilder(URI.create(channel.gatewayUrl()))
                     .timeout(Duration.ofSeconds(10))
                     .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-                    .POST(HttpRequest.BodyPublishers.ofString(signAndEncode(config, params)))
+                    .POST(HttpRequest.BodyPublishers.ofString(signAndEncode(channel, params)))
                     .build();
             HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
                 throw new BusinessException("支付宝网关暂时不可用");
             }
-            return verifiedResponse(config, method.replace('.', '_') + "_response", response.body());
+            return verifiedResponse(channel, method.replace('.', '_') + "_response", response.body());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException("支付宝网关请求中断");
@@ -304,7 +366,7 @@ public class AlipayService {
     }
 
     /** RSA2 验签必须使用原始 JSON 子串，不能重新序列化后验签。 */
-    private JsonNode verifiedResponse(ResolvedConfig config, String responseName, String body) throws IOException {
+    private JsonNode verifiedResponse(ChannelConfig channel, String responseName, String body) throws IOException {
         try (var parser = objectMapper.createParser(body)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new BusinessException("支付宝网关响应格式不正确");
@@ -325,16 +387,16 @@ public class AlipayService {
                     parser.skipChildren();
                 }
             }
-            if (response == null || signature == null || !verifySignature(config, response, signature)) {
+            if (response == null || signature == null || !verifySignature(channel, response, signature)) {
                 throw new BusinessException("支付宝网关响应验签失败");
             }
             return objectMapper.readTree(response);
         }
     }
 
-    private TreeMap<String, String> requestParameters(ResolvedConfig config, String method, String bizContent) {
+    private TreeMap<String, String> requestParameters(ChannelConfig channel, String method, String bizContent) {
         TreeMap<String, String> params = new TreeMap<>();
-        params.put("app_id", config.appId());
+        params.put("app_id", channel.appId());
         params.put("method", method);
         params.put("format", "JSON");
         params.put("charset", "utf-8");
@@ -345,8 +407,8 @@ public class AlipayService {
         return params;
     }
 
-    private String signAndEncode(ResolvedConfig config, TreeMap<String, String> params) {
-        params.put("sign", rsaSign(buildContent(params), parsePrivateKey(config.privateKey())));
+    private String signAndEncode(ChannelConfig channel, TreeMap<String, String> params) {
+        params.put("sign", rsaSign(buildContent(params), parsePrivateKey(channel.privateKey())));
         return params.entrySet().stream().filter(entry -> StringUtils.hasText(entry.getValue()))
                 .map(entry -> urlEncode(entry.getKey()) + "=" + urlEncode(entry.getValue()))
                 .collect(Collectors.joining("&"));
@@ -356,9 +418,10 @@ public class AlipayService {
      * 校验异步通知签名（剔除 sign、sign_type 后按参数名排序拼接验签）。
      * 注意：验签只看密钥是否可用，不受「启用开关」影响（避免关单前在途回调丢失）。
      */
-    public boolean verifyNotify(Map<String, String> rawParams) {
-        ResolvedConfig config = resolve();
-        if (!StringUtils.hasText(config.publicKey())) {
+    public boolean verifyNotify(OmsOrder order, Map<String, String> rawParams) {
+        ChannelConfig channel = channelFor(order);
+        if (!StringUtils.hasText(channel.publicKey()) || !StringUtils.hasText(channel.appId())
+                || !channel.appId().equals(rawParams.get("app_id"))) {
             return false;
         }
         TreeMap<String, String> params = new TreeMap<>(rawParams);
@@ -367,13 +430,13 @@ public class AlipayService {
         if (!StringUtils.hasText(sign)) {
             return false;
         }
-        return verifySignature(config, buildContent(params), sign);
+        return verifySignature(channel, buildContent(params), sign);
     }
 
-    private boolean verifySignature(ResolvedConfig config, String content, String sign) {
+    private boolean verifySignature(ChannelConfig channel, String content, String sign) {
         try {
             Signature verifier = Signature.getInstance("SHA256withRSA");
-            verifier.initVerify(parsePublicKey(config.publicKey()));
+            verifier.initVerify(parsePublicKey(channel.publicKey()));
             verifier.update(content.getBytes(StandardCharsets.UTF_8));
             return verifier.verify(Base64.getDecoder().decode(sign));
         } catch (Exception e) {
@@ -386,9 +449,15 @@ public class AlipayService {
     // 私有工具
     // ==================================================================
 
-    private record ResolvedConfig(boolean enabled, String appId, String privateKey, String publicKey,
-                                  String gatewayUrl, String notifyUrl, String returnUrl, String mode) {
+    private record ResolvedConfig(boolean enabled, ChannelConfig channel, String notifyUrl, String returnUrl, String mode) {}
+
+    private record ChannelConfig(String appId, String privateKey, String publicKey, String gatewayUrl) {
+        boolean hasKeys() {
+            return StringUtils.hasText(appId) && StringUtils.hasText(privateKey) && StringUtils.hasText(publicKey);
+        }
     }
+
+    private record CachedKey<T>(String raw, T key) {}
 
     private String firstNonBlank(String primary, String fallback) {
         return StringUtils.hasText(primary) ? primary.trim() : fallback;
@@ -430,13 +499,14 @@ public class AlipayService {
 
     private PrivateKey parsePrivateKey(String raw) {
         try {
-            if (!raw.equals(cachedPrivateRaw)) {
-                byte[] bytes = Base64.getDecoder().decode(normalizeKey(raw));
-                cachedPrivateKey = KeyFactory.getInstance("RSA")
-                        .generatePrivate(new PKCS8EncodedKeySpec(bytes));
-                cachedPrivateRaw = raw;
+            CachedKey<PrivateKey> cached = cachedPrivate;
+            if (cached != null && raw.equals(cached.raw())) {
+                return cached.key();
             }
-            return cachedPrivateKey;
+            byte[] bytes = Base64.getDecoder().decode(normalizeKey(raw));
+            PrivateKey key = KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(bytes));
+            cachedPrivate = new CachedKey<>(raw, key);
+            return key;
         } catch (Exception e) {
             throw new BusinessException("应用私钥格式不正确（需 PKCS8 Base64）");
         }
@@ -444,13 +514,14 @@ public class AlipayService {
 
     private PublicKey parsePublicKey(String raw) {
         try {
-            if (!raw.equals(cachedPublicRaw)) {
-                byte[] bytes = Base64.getDecoder().decode(normalizeKey(raw));
-                cachedPublicKey = KeyFactory.getInstance("RSA")
-                        .generatePublic(new X509EncodedKeySpec(bytes));
-                cachedPublicRaw = raw;
+            CachedKey<PublicKey> cached = cachedPublic;
+            if (cached != null && raw.equals(cached.raw())) {
+                return cached.key();
             }
-            return cachedPublicKey;
+            byte[] bytes = Base64.getDecoder().decode(normalizeKey(raw));
+            PublicKey key = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(bytes));
+            cachedPublic = new CachedKey<>(raw, key);
+            return key;
         } catch (Exception e) {
             throw new BusinessException("支付宝公钥格式不正确（需 X509 Base64）");
         }

@@ -11,7 +11,8 @@
         <div class="b-label">我的积分</div>
         <div class="b-value">{{ shopStore.info?.points ?? 0 }}</div>
         <div v-if="shopStore.info?.expiringPoints > 0" class="b-expire">
-          {{ shopStore.info.expiringPoints }} 分将于 {{ shopStore.info.expiringDate || '近期' }} 过期
+          30 天内有 {{ shopStore.info.expiringPoints }} 分到期
+          <span v-if="shopStore.info.expiringDate">，最近到期日为 {{ shopStore.info.expiringDate }}</span>
         </div>
         <level-badge :level="shopStore.info?.level || 1" />
       </div>
@@ -28,7 +29,9 @@
     <div class="coupon-grid">
       <div v-for="coupon in coupons" :key="coupon.id" class="ex-card">
         <div class="ex-top">
-          <div class="ex-amount"><i>¥</i>{{ Number(coupon.amount) }}</div>
+          <div class="ex-amount">
+            <i v-if="coupon.type === 1">¥</i>{{ Number(coupon.amount) }}<i v-if="coupon.type === 2">折</i>
+          </div>
           <span class="ex-type">{{ coupon.type === 1 ? '满减券' : '折扣券' }}</span>
         </div>
         <div class="ex-name">{{ coupon.name }}</div>

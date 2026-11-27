@@ -30,6 +30,7 @@ public interface PmsProductMapper extends BaseMapper<PmsProduct> {
                 SELECT s.product_id AS flash_product_id, MIN(f.flash_price) AS flash_min
                 FROM sms_flash_sale f JOIN pms_sku s ON s.id = f.sku_id
                 WHERE f.status = 1 AND f.start_time &lt;= #{now} AND f.end_time &gt;= #{now}
+                  AND f.flash_price &lt; s.price
                 GROUP BY s.product_id
             ) active_flash ON active_flash.flash_product_id = p.id
             ${ew.customSqlSegment}

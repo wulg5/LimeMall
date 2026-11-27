@@ -135,7 +135,9 @@
       </div>
       <div v-if="pointsPreview.length" class="points-coupons">
         <div v-for="coupon in pointsPreview" :key="coupon.id" class="pc" @click="$router.push('/shop/points')">
-          <div class="pc-amount"><i>¥</i>{{ Number(coupon.amount) }}</div>
+          <div class="pc-amount">
+            <i v-if="coupon.type === 1">¥</i>{{ Number(coupon.amount) }}<i v-if="coupon.type === 2">折</i>
+          </div>
           <div class="pc-cond">{{ Number(coupon.minAmount) > 0 ? `满 ${Number(coupon.minAmount)} 元可用` : '无门槛' }}</div>
           <div class="pc-points">{{ coupon.pointsPrice }} 积分</div>
         </div>
