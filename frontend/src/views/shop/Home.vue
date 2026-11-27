@@ -220,10 +220,14 @@ const quickEntries = [
   { short: '会', text: '会员中心', color: '#4338ca', link: '/shop/member' }
 ]
 
-/** 限时特惠数据：优先展示后台配置的秒杀，否则用热销商品折扣兜底 */
+const activeDeals = computed(() => flashSales.value
+  .filter(flash => dayjs(flash.endTime).valueOf() > nowTs.value)
+  .slice(0, 4))
+
+/** 优先展示当前生效的秒杀，否则展示热销商品折扣。 */
 const dealItems = computed(() => {
-  if (flashSales.value.length) {
-    return flashSales.value.slice(0, 4).map((flash) => ({
+  if (activeDeals.value.length) {
+    return activeDeals.value.map((flash) => ({
       key: `f-${flash.id}`,
       flash: true,
       productId: flash.productId,
@@ -254,8 +258,8 @@ const dealItems = computed(() => {
 /** 秒杀场次倒计时（取最近结束的一场；无秒杀时倒计时到当日 24:00） */
 const dealCountdown = computed(() => {
   let endTs
-  if (flashSales.value.length) {
-    endTs = Math.min(...flashSales.value.map((flash) => dayjs(flash.endTime).valueOf()))
+  if (activeDeals.value.length) {
+    endTs = Math.min(...activeDeals.value.map(flash => dayjs(flash.endTime).valueOf()))
   } else {
     endTs = dayjs(nowTs.value).endOf('day').valueOf()
   }

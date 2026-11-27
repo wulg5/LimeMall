@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  * 退款申请服务：管理员审核 + 会员端申请。
  *
  * 业务规则：
- * 1. 仅「待发货/已发货」订单可申请退款；
+ * 1. 待发货、已发货或确认收货后 7 天内可以申请；已收货订单先确认退货入库。
  * 2. 同一订单只能同时处理一笔退款；
  * 3. 支付渠道确认后，同一事务内回补库存、回退销量、恢复优惠券并关闭订单。
  */
@@ -40,6 +40,7 @@ public class OrderReturnService {
     private final OmsOrderReturnMapper returnMapper;
     private final UmsMemberMapper memberMapper;
     private final OrderService orderService;
+    private final PointsLedgerService pointsLedgerService;
 
     /**
      * 管理员分页查询退款申请。
@@ -91,11 +92,14 @@ public class OrderReturnService {
         }
         OmsOrder order = orderService.lockOrder(refund.getOrderId());
         boolean approve = Boolean.TRUE.equals(dto.getApprove());
+        int nextStatus = OmsOrderReturn.REJECTED;
         if (approve) {
             requireRefundable(order);
+            nextStatus = order.getStatus() == OrderService.STATUS_COMPLETED
+                    ? OmsOrderReturn.AWAITING_STOCK : OmsOrderReturn.PROCESSING;
         }
         int changed = returnMapper.update(null, new LambdaUpdateWrapper<OmsOrderReturn>()
-                .set(OmsOrderReturn::getStatus, approve ? OmsOrderReturn.PROCESSING : OmsOrderReturn.REJECTED)
+                .set(OmsOrderReturn::getStatus, nextStatus)
                 .set(OmsOrderReturn::getHandleNote, dto.getHandleNote())
                 .set(OmsOrderReturn::getHandleTime, LocalDateTime.now())
                 .eq(OmsOrderReturn::getId, id)
@@ -105,10 +109,30 @@ public class OrderReturnService {
         }
     }
 
+    @Transactional
+    public void confirmReturnedStock(Long id) {
+        OmsOrderReturn refund = returnMapper.selectById(id);
+        if (refund == null) {
+            throw new BusinessException("退款申请不存在");
+        }
+        OmsOrder order = orderService.lockOrder(refund.getOrderId());
+        if (order.getStatus() != OrderService.STATUS_COMPLETED) {
+            throw new BusinessException("仅已收货订单需要确认退货入库");
+        }
+        int changed = returnMapper.update(null, new LambdaUpdateWrapper<OmsOrderReturn>()
+                .set(OmsOrderReturn::getStatus, OmsOrderReturn.PROCESSING)
+                .eq(OmsOrderReturn::getId, id)
+                .eq(OmsOrderReturn::getStatus, OmsOrderReturn.AWAITING_STOCK));
+        if (changed == 0) {
+            throw new BusinessException("该申请不在待退货入库状态");
+        }
+    }
+
     private void requireRefundable(OmsOrder order) {
         if (order.getStatus() != OrderService.STATUS_UNSHIPPED
-                && order.getStatus() != OrderService.STATUS_SHIPPED) {
-            throw new BusinessException("当前订单状态不允许退款（仅待发货/已发货订单支持）");
+                && order.getStatus() != OrderService.STATUS_SHIPPED
+                && order.getStatus() != OrderService.STATUS_COMPLETED) {
+            throw new BusinessException("当前订单状态不允许退款");
         }
     }
 
@@ -122,6 +146,13 @@ public class OrderReturnService {
             throw new BusinessException("订单不存在");
         }
         requireRefundable(order);
+        if (order.getStatus() == OrderService.STATUS_COMPLETED) {
+            orderService.lockProductsForOrder(order.getId());
+            LocalDateTime deadline = OrderService.returnDeadline(order);
+            if (deadline == null || !LocalDateTime.now().isBefore(deadline)) {
+                throw new BusinessException("订单已超过确认收货后 7 天的退款申请期限");
+            }
+        }
         orderService.requireNoActiveRefund(order.getId());
         OmsOrderReturn ret = new OmsOrderReturn();
         ret.setOrderId(order.getId());
@@ -148,6 +179,7 @@ public class OrderReturnService {
         // 已关闭的迟到付款订单在原关单时已经回补过。
         if (order.getStatus() != OrderService.STATUS_CLOSED) {
             requireRefundable(order);
+            pointsLedgerService.revokeForRefund(order);
             orderService.closeOrder(order);
         }
     }

@@ -186,7 +186,7 @@ public class PortalAuthService {
         vo.setGender(member.getGender());
         vo.setBirthday(member.getBirthday());
         vo.setLevel(member.getLevel());
-        vo.setPoints(member.getPoints());
+        vo.setPoints(Math.min(member.getPoints(), pointsLogMapper.sumUsable(member.getId())));
         int growth = member.getGrowth() == null ? 0 : member.getGrowth();
         vo.setGrowth(growth);
         vo.setNextLevelGrowth(MemberLevels.nextLevelGrowth(growth));

@@ -35,7 +35,7 @@ public class CategoryController {
     @PreAuthorize("hasAnyAuthority('pms:category:list', 'pms:product:list')")
     @Operation(summary = "分类树")
     public Result<List<CategoryNodeVO>> tree() {
-        return Result.ok(categoryService.tree());
+        return Result.ok(categoryService.adminTree());
     }
 
     @PostMapping

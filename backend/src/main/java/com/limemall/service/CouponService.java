@@ -73,8 +73,14 @@ public class CouponService {
         if (dto.getTotalCount() < existing.getReceiveCount()) {
             throw new BusinessException("发行总量不能小于已领取数量（" + existing.getReceiveCount() + "）");
         }
-        applyDto(existing, dto);
-        couponMapper.updateById(existing);
+        SmsCoupon changes = new SmsCoupon();
+        applyDto(changes, dto);
+        int updated = couponMapper.update(changes, new LambdaUpdateWrapper<SmsCoupon>()
+                .eq(SmsCoupon::getId, dto.getId())
+                .le(SmsCoupon::getReceiveCount, dto.getTotalCount()));
+        if (updated == 0) {
+            throw new BusinessException("已领取数量已变化，请刷新后重新编辑");
+        }
     }
 
     /** 上线/下线优惠券 */
@@ -167,6 +173,7 @@ public class CouponService {
      */
     @Transactional
     public void receive(Long memberId, Long couponId) {
+        memberMapper.lockById(memberId);
         SmsCoupon coupon = couponMapper.selectById(couponId);
         LocalDateTime now = LocalDateTime.now();
         if (coupon == null || coupon.getStatus() != 1) {
@@ -184,6 +191,9 @@ public class CouponService {
         int affected = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)
+                .eq(SmsCoupon::getStatus, 1)
+                .le(SmsCoupon::getStartTime, now)
+                .ge(SmsCoupon::getEndTime, now)
                 .apply("receive_count < total_count"));
         if (affected == 0) {
             throw new BusinessException("优惠券已被领完");
@@ -271,6 +281,7 @@ public class CouponService {
      */
     @Transactional
     public void exchange(Long memberId, Long couponId) {
+        UmsMember member = memberMapper.lockById(memberId);
         SmsCoupon coupon = couponMapper.selectById(couponId);
         LocalDateTime now = LocalDateTime.now();
         if (coupon == null || coupon.getStatus() != 1
@@ -286,16 +297,13 @@ public class CouponService {
         if (myCount >= coupon.getPerLimit()) {
             throw new BusinessException("已达到该券兑换上限");
         }
-        int deducted = memberMapper.update(null, new LambdaUpdateWrapper<UmsMember>()
-                .setSql("points = points - " + coupon.getPointsPrice())
-                .eq(UmsMember::getId, memberId)
-                .ge(UmsMember::getPoints, coupon.getPointsPrice()));
-        if (deducted == 0) {
-            throw new BusinessException("积分不足");
-        }
+        pointsLedgerService.deduct(member, coupon.getPointsPrice(), "积分兑换：" + coupon.getName(), now);
         int stock = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)
+                .eq(SmsCoupon::getStatus, 1)
+                .le(SmsCoupon::getStartTime, now)
+                .ge(SmsCoupon::getEndTime, now)
                 .apply("receive_count < total_count"));
         if (stock == 0) {
             throw new BusinessException("优惠券已被兑完");
@@ -306,8 +314,6 @@ public class CouponService {
         couponMember.setStatus(0);
         couponMember.setReceiveTime(now);
         couponMemberMapper.insert(couponMember);
-        // 积分批次账本：按先进先出扣减，保证 12 个月滚动过期口径一致
-        pointsLedgerService.deduct(memberId, coupon.getPointsPrice(), "积分兑换：" + coupon.getName());
     }
 
     // ==================================================================

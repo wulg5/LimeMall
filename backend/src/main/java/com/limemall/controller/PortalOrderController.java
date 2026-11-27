@@ -85,7 +85,7 @@ public class PortalOrderController {
     }
 
     @PostMapping("/{id}/refund")
-    @Operation(summary = "申请退款（待发货/已发货订单）")
+    @Operation(summary = "申请退款（待发货、已发货或确认收货后 7 天内）")
     public Result<Void> refund(@PathVariable Long id, @Valid @RequestBody ReturnApplyDTO dto) {
         dto.setOrderId(id);
         orderReturnService.apply(SecurityUtils.getMemberId(), dto);

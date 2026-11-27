@@ -18,6 +18,9 @@ import java.time.LocalDateTime;
 @Mapper
 public interface PmsProductMapper extends BaseMapper<PmsProduct> {
 
+    @Select("SELECT id FROM pms_product WHERE id = #{id} FOR UPDATE")
+    Long lockById(Long id);
+
     // customSqlSegment 由 LambdaQueryWrapper 生成，搜索值通过绑定参数传入。
     @Select("""
             <script>

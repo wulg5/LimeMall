@@ -20,6 +20,7 @@ public class OmsOrderReturn {
     public static final int REFUNDED = 4;
     public static final int REJECTED = 2;
     public static final int PROCESSING = 3;
+    public static final int AWAITING_STOCK = 5;
 
     /** 主键ID */
     @TableId(type = IdType.AUTO)
@@ -43,7 +44,7 @@ public class OmsOrderReturn {
     /** 退款金额 */
     private BigDecimal amount;
 
-    /** 审核状态：0待审核 1历史审核通过 2已拒绝 3退款处理中 4已退款 */
+    /** 审核状态：0待审核 1历史审核通过 2已拒绝 3退款处理中 4已退款 5待退货入库 */
     private Integer status;
 
     /** 审核备注 */

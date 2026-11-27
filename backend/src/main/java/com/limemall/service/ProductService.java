@@ -11,6 +11,7 @@ import com.limemall.entity.PmsBrand;
 import com.limemall.entity.PmsCategory;
 import com.limemall.entity.PmsProduct;
 import com.limemall.entity.PmsSku;
+import com.limemall.mapper.OmsOrderItemMapper;
 import com.limemall.mapper.PmsBrandMapper;
 import com.limemall.mapper.PmsCategoryMapper;
 import com.limemall.mapper.PmsProductMapper;
@@ -22,6 +23,7 @@ import com.limemall.util.HtmlSanitizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -50,6 +52,7 @@ public class ProductService {
 
     private final PmsProductMapper productMapper;
     private final PmsSkuMapper skuMapper;
+    private final OmsOrderItemMapper orderItemMapper;
     private final PmsBrandMapper brandMapper;
     private final PmsCategoryMapper categoryMapper;
     private final CommentService commentService;
@@ -201,6 +204,7 @@ public class ProductService {
         if (dto.getId() == null) {
             throw new BusinessException("缺少商品ID");
         }
+        productMapper.lockById(dto.getId());
         PmsProduct product = productMapper.selectById(dto.getId());
         if (product == null) {
             throw new BusinessException("商品不存在或已删除");
@@ -215,12 +219,10 @@ public class ProductService {
                 .map(SkuItemDTO::getId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        // 删除本次未提交的 SKU
-        for (PmsSku sku : existing) {
-            if (!incomingIds.contains(sku.getId())) {
-                skuMapper.deleteById(sku.getId());
-            }
-        }
+        List<Long> removedIds = existing.stream().map(PmsSku::getId)
+                .filter(id -> !incomingIds.contains(id)).toList();
+        requireRemovableSkus(removedIds);
+        removedIds.forEach(skuMapper::deleteById);
         int index = existing.size() + 1;
         for (SkuItemDTO skuDto : dto.getSkus()) {
             if (skuDto.getId() != null) {
@@ -274,10 +276,15 @@ public class ProductService {
      */
     @Transactional
     public void delete(Long id) {
+        productMapper.lockById(id);
         PmsProduct product = productMapper.selectById(id);
         if (product == null) {
             throw new BusinessException("商品不存在或已删除");
         }
+        List<Long> skuIds = skuMapper.selectList(new LambdaQueryWrapper<PmsSku>()
+                        .select(PmsSku::getId).eq(PmsSku::getProductId, id))
+                .stream().map(PmsSku::getId).toList();
+        requireRemovableSkus(skuIds);
         productMapper.deleteById(id);
         skuMapper.delete(new LambdaQueryWrapper<PmsSku>().eq(PmsSku::getProductId, id));
     }
@@ -285,6 +292,7 @@ public class ProductService {
     /**
      * 调整 SKU 库存并重算商品总库存。
      */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void updateSkuStock(Long skuId, Integer stock) {
         if (stock == null || stock < 0) {
             throw new BusinessException("库存不能为负数");
@@ -293,16 +301,25 @@ public class ProductService {
         if (sku == null) {
             throw new BusinessException("SKU 不存在");
         }
+        productMapper.lockById(sku.getProductId());
         PmsSku update = new PmsSku();
         update.setId(skuId);
         update.setStock(stock);
-        skuMapper.updateById(update);
+        if (skuMapper.updateById(update) == 0) {
+            throw new BusinessException("SKU 不存在");
+        }
         recalcProductStat(sku.getProductId());
     }
 
     // ------------------------------------------------------------------
     // 私有方法
     // ------------------------------------------------------------------
+
+    private void requireRemovableSkus(List<Long> skuIds) {
+        if (!skuIds.isEmpty() && orderItemMapper.hasRestorableSku(skuIds, LocalDateTime.now().minusDays(OrderService.RETURN_DAYS))) {
+            throw new BusinessException("有未完结订单或可退货订单引用该规格，暂时无法删除");
+        }
+    }
 
     private void validateCategory(Long categoryId) {
         PmsCategory category = categoryMapper.selectById(categoryId);

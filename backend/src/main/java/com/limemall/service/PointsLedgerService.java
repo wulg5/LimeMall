@@ -3,7 +3,9 @@ package com.limemall.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.limemall.common.BusinessException;
 import com.limemall.common.PageResult;
+import com.limemall.entity.OmsOrder;
 import com.limemall.entity.UmsMember;
 import com.limemall.entity.UmsPointsLog;
 import com.limemall.mapper.UmsMemberMapper;
@@ -31,15 +33,15 @@ public class PointsLedgerService {
     private final UmsMemberMapper memberMapper;
 
     /** 记入获取批次（12 个月后过期） */
-    public void earn(Long memberId, int points, String remark) {
+    public void earnForOrder(OmsOrder order, int points) {
         if (points <= 0) {
             return;
         }
         UmsPointsLog batch = new UmsPointsLog();
-        batch.setMemberId(memberId);
+        batch.setMemberId(order.getMemberId());
         batch.setAmount(points);
         batch.setType(1);
-        batch.setRemark(remark);
+        batch.setRemark(orderAwardRemark(order));
         batch.setStatus(0);
         batch.setExpireTime(LocalDateTime.now().plusMonths(12));
         pointsLogMapper.insert(batch);
@@ -47,17 +49,19 @@ public class PointsLedgerService {
 
     /**
      * 消费积分：按批次先进先出扣减剩余额度。
-     * 调用方必须先完成 member.points 的条件扣减（保证余额不超扣），本方法同一事务内维护批次。
+     * 调用方已锁定会员行，余额和批次在同一事务内扣减。
      */
-    public void deduct(Long memberId, int points, String remark) {
-        if (points <= 0) {
-            return;
+    public void deduct(UmsMember member, int points, String remark, LocalDateTime now) {
+        if (member == null || member.getPoints() < points) {
+            throw new BusinessException("可用积分不足");
         }
+        Long memberId = member.getId();
         List<UmsPointsLog> batches = pointsLogMapper.selectList(new LambdaQueryWrapper<UmsPointsLog>()
                 .eq(UmsPointsLog::getMemberId, memberId)
                 .eq(UmsPointsLog::getType, 1)
                 .eq(UmsPointsLog::getStatus, 0)
                 .gt(UmsPointsLog::getAmount, 0)
+                .gt(UmsPointsLog::getExpireTime, now)
                 .orderByAsc(UmsPointsLog::getCreateTime)
                 .orderByAsc(UmsPointsLog::getId));
         int remaining = points;
@@ -71,56 +75,106 @@ public class PointsLedgerService {
             remaining -= take;
         }
         if (remaining > 0) {
-            log.warn("积分批次不足：会员 {} 扣减 {} 积分，批次剩余缺口 {}", memberId, points, remaining);
+            throw new BusinessException("可用积分不足");
         }
-        UmsPointsLog spend = new UmsPointsLog();
-        spend.setMemberId(memberId);
-        spend.setAmount(-points);
-        spend.setType(2);
-        spend.setRemark(remark);
-        spend.setStatus(0);
-        pointsLogMapper.insert(spend);
+        subtractBalance(memberId, points);
+        recordDebit(memberId, points, 2, 0, remark);
     }
 
-    /**
-     * 过期核销：将到期批次的剩余积分从会员余额中扣除并标记批次过期。
-     *
-     * @return 本次核销的批次数
-     */
+    public List<Long> expiredBatchIdsAfter(long afterId, LocalDateTime cutoff) {
+        return pointsLogMapper.selectList(new LambdaQueryWrapper<UmsPointsLog>()
+                        .select(UmsPointsLog::getId)
+                        .gt(UmsPointsLog::getId, afterId)
+                        .eq(UmsPointsLog::getType, 1)
+                        .eq(UmsPointsLog::getStatus, 0)
+                        .gt(UmsPointsLog::getAmount, 0)
+                        .le(UmsPointsLog::getExpireTime, cutoff)
+                        .orderByAsc(UmsPointsLog::getId)
+                        .last("LIMIT 500"))
+                .stream().map(UmsPointsLog::getId).toList();
+    }
+
     @Transactional
-    public int expireBatches(int limit) {
-        List<UmsPointsLog> expired = pointsLogMapper.selectList(new LambdaQueryWrapper<UmsPointsLog>()
+    public boolean expireBatch(Long batchId, LocalDateTime cutoff) {
+        UmsPointsLog candidate = pointsLogMapper.selectById(batchId);
+        if (candidate == null || memberMapper.lockById(candidate.getMemberId()) == null) {
+            return false;
+        }
+        UmsPointsLog batch = pointsLogMapper.selectOne(new LambdaQueryWrapper<UmsPointsLog>()
+                .eq(UmsPointsLog::getId, batchId)
                 .eq(UmsPointsLog::getType, 1)
                 .eq(UmsPointsLog::getStatus, 0)
                 .gt(UmsPointsLog::getAmount, 0)
-                .le(UmsPointsLog::getExpireTime, LocalDateTime.now())
-                .last("LIMIT " + limit));
-        int handled = 0;
-        for (UmsPointsLog batch : expired) {
-            int amount = batch.getAmount();
-            int affected = memberMapper.update(null, new LambdaUpdateWrapper<UmsMember>()
-                    .setSql("points = points - " + amount)
-                    .eq(UmsMember::getId, batch.getMemberId())
-                    .ge(UmsMember::getPoints, amount));
-            if (affected == 0) {
-                log.warn("积分过期核销跳过（余额不足，数据异常）：batchId={} memberId={} amount={}",
-                        batch.getId(), batch.getMemberId(), amount);
-                continue;
-            }
-            pointsLogMapper.update(null, new LambdaUpdateWrapper<UmsPointsLog>()
-                    .set(UmsPointsLog::getAmount, 0)
-                    .set(UmsPointsLog::getStatus, 1)
-                    .eq(UmsPointsLog::getId, batch.getId()));
-            UmsPointsLog expireLog = new UmsPointsLog();
-            expireLog.setMemberId(batch.getMemberId());
-            expireLog.setAmount(-amount);
-            expireLog.setType(3);
-            expireLog.setRemark("积分过期（批次 #" + batch.getId() + "）");
-            expireLog.setStatus(1);
-            pointsLogMapper.insert(expireLog);
-            handled++;
+                .le(UmsPointsLog::getExpireTime, cutoff)
+                .last("FOR UPDATE"));
+        if (batch == null) {
+            return false;
         }
-        return handled;
+        int amount = batch.getAmount();
+        if (subtractBalance(batch.getMemberId(), amount) == 0) {
+            log.warn("积分过期核销跳过（余额不足，数据异常）：batchId={} memberId={} amount={}",
+                    batchId, batch.getMemberId(), amount);
+            return false;
+        }
+        clearBatch(batchId, 1);
+        recordDebit(batch.getMemberId(), amount, 3, 1, "积分过期（批次 #" + batchId + "）");
+        return true;
+    }
+
+    /** 仅撤回该单尚未使用且未到期的积分，旧订单沿用原有的订单号备注。 */
+    public void revokeForRefund(OmsOrder order) {
+        UmsMember member = memberMapper.lockById(order.getMemberId());
+        if (member == null) {
+            return;
+        }
+        UmsPointsLog batch = pointsLogMapper.selectOne(new LambdaQueryWrapper<UmsPointsLog>()
+                .eq(UmsPointsLog::getMemberId, member.getId())
+                .eq(UmsPointsLog::getType, 1)
+                .eq(UmsPointsLog::getStatus, 0)
+                .eq(UmsPointsLog::getRemark, orderAwardRemark(order))
+                .gt(UmsPointsLog::getAmount, 0)
+                .gt(UmsPointsLog::getExpireTime, LocalDateTime.now())
+                .last("FOR UPDATE"));
+        if (batch == null) {
+            return;
+        }
+        int amount = Math.min(member.getPoints(), batch.getAmount());
+        if (amount < batch.getAmount()) {
+            log.warn("退款撤回积分时发现批次超过余额：orderSn={} batchId={}", order.getOrderSn(), batch.getId());
+        }
+        clearBatch(batch.getId(), 2);
+        if (amount > 0) {
+            subtractBalance(member.getId(), amount);
+            recordDebit(member.getId(), amount, 4, 2, "订单 " + order.getOrderSn() + " 退款撤回积分");
+        }
+    }
+
+    private static String orderAwardRemark(OmsOrder order) {
+        return "订单 " + order.getOrderSn() + " 消费积分";
+    }
+
+    private int subtractBalance(Long memberId, int points) {
+        return memberMapper.update(null, new LambdaUpdateWrapper<UmsMember>()
+                .setSql("points = points - " + points)
+                .eq(UmsMember::getId, memberId)
+                .ge(UmsMember::getPoints, points));
+    }
+
+    private void clearBatch(Long batchId, int status) {
+        pointsLogMapper.update(null, new LambdaUpdateWrapper<UmsPointsLog>()
+                .set(UmsPointsLog::getAmount, 0)
+                .set(UmsPointsLog::getStatus, status)
+                .eq(UmsPointsLog::getId, batchId));
+    }
+
+    private void recordDebit(Long memberId, int points, int type, int status, String remark) {
+        UmsPointsLog record = new UmsPointsLog();
+        record.setMemberId(memberId);
+        record.setAmount(-points);
+        record.setType(type);
+        record.setStatus(status);
+        record.setRemark(remark);
+        pointsLogMapper.insert(record);
     }
 
     /** 会员积分明细（流水与批次，按时间倒序分页） */

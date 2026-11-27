@@ -40,7 +40,7 @@ public class OrderRefundJob {
                 if (claimed == 0) {
                     continue;
                 }
-                if (alipayService.refund(refund.getOrderSn(), refund.getAmount())) {
+                if (refund.getAmount().signum() == 0 || alipayService.refund(refund.getOrderSn(), refund.getAmount())) {
                     returnService.confirmRefund(refund);
                 } else {
                     log.warn("退款待支付渠道确认，稍后重试 orderSn={}", refund.getOrderSn());

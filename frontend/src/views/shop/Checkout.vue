@@ -161,7 +161,10 @@ async function handleSubmit() {
   try {
     await formRef.value.validate()
     const order = await createOrder({
-      items: orderItems,
+      items: orderItems.map(item => ({
+        ...item,
+        expectedUnitPrice: quoteItems.value.get(item.skuId).price
+      })),
       expectedPayAmount: quote.value.payAmount,
       receiverName: form.receiverName,
       receiverPhone: form.receiverPhone,
@@ -170,11 +173,14 @@ async function handleSubmit() {
       couponMemberId: couponMemberId.value || undefined
     })
     cartStore.removeChecked()
-    await ElMessageBox.alert(
-      `订单提交成功！订单号 ${order.orderSn}，应付 ${money(order.payAmount)}，请尽快完成支付。`,
-      '下单成功',
-      { type: 'success', confirmButtonText: '去支付' }
-    )
+    const requiresPayment = order.status === 0
+    const message = requiresPayment
+      ? `订单号 ${order.orderSn}，应付 ${money(order.payAmount)}，请尽快完成支付。`
+      : `订单号 ${order.orderSn}，本单无需支付，请等待发货。`
+    await ElMessageBox.alert(message, '下单成功', {
+      type: 'success',
+      confirmButtonText: requiresPayment ? '查看订单并支付' : '查看订单'
+    })
     router.push('/shop/orders')
   } catch (error) {
     // 表单校验错误由表单提示，订单错误已由请求拦截器提示。

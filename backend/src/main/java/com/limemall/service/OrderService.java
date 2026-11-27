@@ -35,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -71,6 +72,7 @@ public class OrderService {
     public static final int STATUS_SHIPPED = 2;
     public static final int STATUS_COMPLETED = 3;
     public static final int STATUS_CLOSED = 4;
+    static final int RETURN_DAYS = 7;
 
     /** 包邮门槛 */
     private static final BigDecimal FREE_FREIGHT_THRESHOLD = new BigDecimal("99");
@@ -198,9 +200,13 @@ public class OrderService {
      * 3. 校验并核销优惠券（归属、状态、有效期、门槛）；
      * 4. 生成订单与明细快照，返回订单详情。
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public OrderDetailVO createOrder(Long memberId, OrderCreateDTO dto) {
+        UmsMember buyer = memberMapper.lockById(memberId);
         Map<Long, Integer> quantities = mergeQuantities(dto.getItems());
+        // 商品写入使用相同的加锁顺序，防止下单时删除规格。
+        List<PmsSku> skus = skuMapper.selectBatchIds(quantities.keySet());
+        skus.stream().map(PmsSku::getProductId).distinct().sorted().forEach(productMapper::lockById);
         // 解析生效中的秒杀价（服务端权威价格，覆盖 SKU 常规售价）
         Map<Long, SmsFlashSale> flashMap = flashSaleService.activeSkuMap(quantities.keySet());
 
@@ -219,7 +225,15 @@ public class OrderService {
         }
 
         List<OmsOrderItem> items = priceItems(quantities, flashMap);
-        Pricing pricing = calculatePrice(memberId, dto.getCouponMemberId(), items);
+        Map<Long, BigDecimal> currentPrices = items.stream()
+                .collect(Collectors.toMap(OmsOrderItem::getSkuId, OmsOrderItem::getPrice));
+        for (OrderCreateDTO.Item requested : dto.getItems()) {
+            if (requested.getExpectedUnitPrice() != null
+                    && requested.getExpectedUnitPrice().compareTo(currentPrices.get(requested.getSkuId())) != 0) {
+                throw new BusinessException("商品单价已变化，请核对后再提交");
+            }
+        }
+        Pricing pricing = calculatePrice(buyer, dto.getCouponMemberId(), items);
         OrderQuoteVO quote = pricing.quote();
         if (dto.getExpectedPayAmount() != null && dto.getExpectedPayAmount().compareTo(quote.payAmount()) != 0) {
             throw new BusinessException("结算金额已变化，请核对金额后再提交");
@@ -282,6 +296,9 @@ public class OrderService {
                 throw new BusinessException("优惠券已失效");
             }
         }
+        if (order.getPayAmount().signum() == 0) {
+            markPaid(order, LocalDateTime.now());
+        }
         return toDetailVO(orderMapper.selectById(order.getId()));
     }
 
@@ -289,7 +306,7 @@ public class OrderService {
     public OrderQuoteVO quote(Long memberId, OrderQuoteDTO dto) {
         Map<Long, Integer> quantities = mergeQuantities(dto.getItems());
         List<OmsOrderItem> items = priceItems(quantities, flashSaleService.activeSkuMap(quantities.keySet()));
-        return calculatePrice(memberId, dto.getCouponMemberId(), items).quote();
+        return calculatePrice(memberMapper.selectById(memberId), dto.getCouponMemberId(), items).quote();
     }
 
     private Map<Long, Integer> mergeQuantities(List<OrderCreateDTO.Item> requestedItems) {
@@ -338,11 +355,10 @@ public class OrderService {
         return items;
     }
 
-    private Pricing calculatePrice(Long memberId, Long couponMemberId, List<OmsOrderItem> items) {
+    private Pricing calculatePrice(UmsMember buyer, Long couponMemberId, List<OmsOrderItem> items) {
         BigDecimal totalAmount = items.stream().map(OmsOrderItem::getItemAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         // 运费规则：金卡及以上会员全场免运费；其余满 99 包邮
-        UmsMember buyer = memberMapper.selectById(memberId);
         int buyerLevel = buyer == null || buyer.getLevel() == null ? 1 : buyer.getLevel();
         BigDecimal freightAmount = MemberLevels.freeShipping(buyerLevel)
                 ? BigDecimal.ZERO
@@ -354,7 +370,7 @@ public class OrderService {
         SmsCoupon usedCoupon = null;
         if (couponMemberId != null) {
             usedCouponMember = couponMemberMapper.selectById(couponMemberId);
-            if (usedCouponMember == null || !usedCouponMember.getMemberId().equals(memberId)
+            if (usedCouponMember == null || buyer == null || !usedCouponMember.getMemberId().equals(buyer.getId())
                     || usedCouponMember.getStatus() != 0) {
                 throw new BusinessException("优惠券不可用");
             }
@@ -388,15 +404,19 @@ public class OrderService {
      * 发起支付：返回支付宝收银台跳转 URL。
      * 生产语义：未配置支付渠道时明确报错，**绝不**以模拟入账代替真实支付。
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> pay(Long memberId, Long id) {
-        OmsOrder order = getMemberOrder(memberId, id);
+        OmsOrder order = requireOrderOwner(lockOrder(id), memberId);
         if (order.getStatus() != STATUS_UNPAID) {
             throw new BusinessException("当前订单状态不可支付");
         }
-        LocalDateTime paymentDeadline = order.getCreateTime().plusMinutes(payTimeoutMinutes);
+        LocalDateTime paymentDeadline = paymentDeadline(order);
         if (!paymentDeadline.isAfter(LocalDateTime.now())) {
             throw new BusinessException("订单已超过付款时限");
+        }
+        if (order.getPayAmount().signum() == 0) {
+            markPaid(order, LocalDateTime.now());
+            return Map.of("paid", true);
         }
         if (!alipayService.isEnabled()) {
             throw new BusinessException("支付功能尚未配置，请联系管理员");
@@ -454,8 +474,11 @@ public class OrderService {
         if (affected == 0) {
             return false;
         }
+        UmsMember member = memberMapper.lockById(order.getMemberId());
+        List<OmsOrderItem> items = listItems(order.getId());
+        lockOrderProducts(items);
         // 支付成功累计销量
-        for (OmsOrderItem item : listItems(order.getId())) {
+        for (OmsOrderItem item : items) {
             skuMapper.update(null, new LambdaUpdateWrapper<PmsSku>()
                     .setSql("sales = sales + " + item.getQuantity())
                     .eq(PmsSku::getId, item.getSkuId()));
@@ -467,9 +490,7 @@ public class OrderService {
         // 成长值 += 实付金额（只增不减，决定等级——积分消费不会掉级）；
         // 积分 += 实付金额 × 等级倍率（站内货币，可在积分商城兑换优惠券）；
         // 同时写入积分批次账本（12 个月滚动过期）。
-        UmsMember member = memberMapper.selectOne(new LambdaQueryWrapper<UmsMember>()
-                .eq(UmsMember::getId, order.getMemberId()).last("FOR UPDATE"));
-        if (member != null) {
+        if (member != null && order.getPayAmount().signum() > 0) {
             int payYuan = order.getPayAmount().intValue();
             int currentGrowth = member.getGrowth() == null ? 0 : member.getGrowth();
             int currentPoints = member.getPoints() == null ? 0 : member.getPoints();
@@ -481,8 +502,7 @@ public class OrderService {
             memberUpdate.setGrowth(newGrowth);
             memberUpdate.setLevel(MemberLevels.resolveLevel(newGrowth));
             memberMapper.updateById(memberUpdate);
-            pointsLedgerService.earn(member.getId(), earnedPoints,
-                    "订单 " + order.getOrderSn() + " 消费积分");
+            pointsLedgerService.earnForOrder(order, earnedPoints);
         }
         return true;
     }
@@ -559,15 +579,20 @@ public class OrderService {
 
     private void restoreStockAndCoupon(OmsOrder order) {
         List<OmsOrderItem> items = listItems(order.getId());
-        boolean paid = order.getStatus() == STATUS_UNSHIPPED || order.getStatus() == STATUS_SHIPPED;
+        lockOrderProducts(items);
+        boolean paid = order.getStatus() == STATUS_UNSHIPPED || order.getStatus() == STATUS_SHIPPED
+                || order.getStatus() == STATUS_COMPLETED;
         for (OmsOrderItem item : items) {
             int quantity = item.getQuantity();
-            skuMapper.update(null, new LambdaUpdateWrapper<PmsSku>()
+            int restored = skuMapper.update(null, new LambdaUpdateWrapper<PmsSku>()
                     .setSql("stock = stock + " + quantity)
-                    .eq(PmsSku::getId, item.getSkuId()));
-            productMapper.update(null, new LambdaUpdateWrapper<PmsProduct>()
-                    .setSql("stock = stock + " + quantity)
-                    .eq(PmsProduct::getId, item.getProductId()));
+                    .eq(PmsSku::getId, item.getSkuId())
+                    .eq(PmsSku::getProductId, item.getProductId()));
+            if (restored > 0) {
+                productMapper.update(null, new LambdaUpdateWrapper<PmsProduct>()
+                        .setSql("stock = stock + " + quantity)
+                        .eq(PmsProduct::getId, item.getProductId()));
+            }
             if (paid) {
                 skuMapper.update(null, new LambdaUpdateWrapper<PmsSku>()
                         .setSql("sales = GREATEST(sales - " + quantity + ", 0)")
@@ -615,7 +640,7 @@ public class OrderService {
     void requireNoActiveRefund(Long orderId) {
         Long active = returnMapper.selectCount(new LambdaQueryWrapper<OmsOrderReturn>()
                 .eq(OmsOrderReturn::getOrderId, orderId)
-                .in(OmsOrderReturn::getStatus, OmsOrderReturn.PENDING, OmsOrderReturn.PROCESSING));
+                .in(OmsOrderReturn::getStatus, OmsOrderReturn.PENDING, OmsOrderReturn.PROCESSING, OmsOrderReturn.AWAITING_STOCK));
         if (active > 0) {
             throw new BusinessException("订单有退款正在处理");
         }
@@ -630,6 +655,22 @@ public class OrderService {
             throw new BusinessException("订单不存在");
         }
         return order;
+    }
+
+    void lockProductsForOrder(Long orderId) {
+        lockOrderProducts(listItems(orderId));
+    }
+
+    private void lockOrderProducts(List<OmsOrderItem> items) {
+        items.stream().map(OmsOrderItem::getProductId).distinct().sorted().forEach(productMapper::lockById);
+    }
+
+    private LocalDateTime paymentDeadline(OmsOrder order) {
+        return order.getCreateTime().plusMinutes(payTimeoutMinutes);
+    }
+
+    static LocalDateTime returnDeadline(OmsOrder order) {
+        return order.getReceiveTime() == null ? null : order.getReceiveTime().plusDays(RETURN_DAYS);
     }
 
     private List<OmsOrderItem> listItems(Long orderId) {
@@ -676,6 +717,12 @@ public class OrderService {
             vo.setMemberNickname(member == null ? "" : member.getNickname());
             vo.setCommented(commentedOrderIds.contains(order.getId()));
             vo.setRefundStatus(refundStatuses.get(order.getId()));
+            if (order.getStatus() == STATUS_UNPAID) {
+                vo.setPaymentDeadline(paymentDeadline(order));
+            }
+            if (order.getStatus() == STATUS_COMPLETED) {
+                vo.setReturnDeadline(returnDeadline(order));
+            }
             List<OmsOrderItem> items = itemsMap.getOrDefault(order.getId(), List.of());
             vo.setItemCount(items.stream().mapToInt(OmsOrderItem::getQuantity).sum());
             if (!items.isEmpty()) {

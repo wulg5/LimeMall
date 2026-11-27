@@ -69,7 +69,7 @@
             <el-table-column label="类型" width="100">
               <template #default="{ row }">
                 <el-tag :type="row.type === 1 ? 'success' : row.type === 2 ? 'warning' : 'info'">
-                  {{ row.type === 1 ? '获取' : row.type === 2 ? '消费' : '过期' }}
+                  {{ POINTS_LOG_TYPES[row.type] || '未知' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -87,8 +87,8 @@
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <template v-if="row.type === 1">
-                  <el-tag :type="row.status === 1 ? 'info' : 'success'" size="small">
-                    {{ row.status === 1 ? '已过期/已用' : '有效' }}
+                  <el-tag :type="batchStatus(row) === '有效' ? 'success' : 'info'" size="small">
+                    {{ batchStatus(row) }}
                   </el-tag>
                 </template>
                 <span v-else>-</span>
@@ -107,10 +107,19 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { exchangeCoupon, getExchangeCoupons, getPointsRecords } from '@/api/portal'
 import { useShopStore } from '@/stores/shop'
 import LevelBadge from '@/components/LevelBadge.vue'
+
+const POINTS_LOG_TYPES = { 1: '获取', 2: '消费', 3: '过期', 4: '退款撤回' }
+
+function batchStatus(row) {
+  if (row.status === 2) return '已撤回'
+  if (row.status === 1 || dayjs(row.expireTime).valueOf() <= Date.now()) return '已过期'
+  return row.amount > 0 ? '有效' : '已用完'
+}
 
 const shopStore = useShopStore()
 

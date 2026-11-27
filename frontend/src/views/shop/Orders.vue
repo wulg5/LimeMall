@@ -40,10 +40,10 @@
             </el-tag>
             <el-button size="small" @click="openDetail(order)">订单详情</el-button>
             <template v-if="order.status === 0">
-              <el-button size="small" type="primary" @click="handlePay(order)">去支付</el-button>
+              <el-button size="small" type="primary" @click="handlePay(order)">{{ Number(order.payAmount) > 0 ? '去支付' : '确认免支付订单' }}</el-button>
               <el-button size="small" @click="handleCancel(order)">取消订单</el-button>
             </template>
-            <template v-if="(order.status === 1 || order.status === 2) && !isRefundActive(order.refundStatus)">
+            <template v-if="canApplyRefund(order)">
               <el-button size="small" type="warning" plain @click="openRefund(order)">申请退款</el-button>
             </template>
             <template v-if="order.status === 2 && !isRefundActive(order.refundStatus)">
@@ -94,8 +94,6 @@ import {
 } from '@/api/portal'
 import { isRefundActive, money, ORDER_STATUS, RETURN_STATUS } from '@/utils/format'
 
-/** 与后端 limemall.order.pay-timeout-minutes 保持一致（默认 30 分钟） */
-const PAY_TIMEOUT_MINUTES = 30
 
 const activeTab = ref('all')
 const list = ref([])
@@ -105,7 +103,8 @@ const pageSize = ref(5)
 
 const nowTs = ref(Date.now())
 let tickTimer = null
-let expireRefreshScheduled = false
+let lastExpiryRefresh = 0
+let latestListRequest = 0
 
 onMounted(() => {
   load()
@@ -118,21 +117,19 @@ onBeforeUnmount(() => {
 
 function tick() {
   nowTs.value = Date.now()
-  // 出现超时的待付款订单：等后端定时任务关单后自动刷新一次列表
-  if (!expireRefreshScheduled) {
-    const expired = list.value.some((order) => order.status === 0
-      && dayjs(order.createTime).add(PAY_TIMEOUT_MINUTES, 'minute').valueOf() <= nowTs.value)
-    if (expired) {
-      expireRefreshScheduled = true
-      setTimeout(() => load(), 65_000)
-    }
+  if (nowTs.value - lastExpiryRefresh < 10_000) return
+  const expired = list.value.some(order => order.status === 0 && order.paymentDeadline
+    && dayjs(order.paymentDeadline).valueOf() <= nowTs.value)
+  if (expired) {
+    lastExpiryRefresh = nowTs.value
+    load().catch(() => {})
   }
 }
 
 /** 待付款订单剩余支付时间文案 */
 function remainText(order) {
-  const deadline = dayjs(order.createTime).add(PAY_TIMEOUT_MINUTES, 'minute')
-  const remain = deadline.valueOf() - nowTs.value
+  if (!order.paymentDeadline) return ''
+  const remain = dayjs(order.paymentDeadline).valueOf() - nowTs.value
   if (remain <= 0) {
     return '已超时，系统即将自动关闭订单'
   }
@@ -141,12 +138,21 @@ function remainText(order) {
   return `剩余支付时间 ${minutes}:${String(seconds).padStart(2, '0')}，超时自动取消`
 }
 
+function canApplyRefund(order) {
+  if (isRefundActive(order.refundStatus)) return false
+  if (order.status === 1 || order.status === 2) return true
+  return order.status === 3 && order.returnDeadline
+    && dayjs(order.returnDeadline).valueOf() > nowTs.value
+}
+
 async function load() {
+  const request = ++latestListRequest
   const data = await getMyOrders({
     pageNum: pageNum.value,
     pageSize: pageSize.value,
     status: activeTab.value === 'all' ? undefined : Number(activeTab.value)
   })
+  if (request !== latestListRequest) return
   list.value = data.records
   total.value = data.total
 }
@@ -170,14 +176,20 @@ function openDetail(order) {
 
 async function handlePay(order) {
   try {
-    await ElMessageBox.confirm(`确认支付 ${money(order.payAmount)} 吗？`, '订单支付', { type: 'info' })
+    const prompt = Number(order.payAmount) === 0
+      ? '本单无需支付，确认后进入待发货。'
+      : `确认支付 ${money(order.payAmount)} 吗？`
+    await ElMessageBox.confirm(prompt, '订单支付', { type: 'info' })
   } catch (e) {
     return // 用户取消
   }
   // 失败（如"支付功能尚未配置"）由全局拦截器提示；成功则跳转支付宝收银台
   try {
     const result = await payOrder(order.id)
-    if (result && result.payUrl) {
+    if (result?.paid) {
+      ElMessage.success('订单已确认，请等待发货')
+      await load()
+    } else if (result?.payUrl) {
       ElMessage.success('正在跳转支付宝收银台...')
       window.location.href = result.payUrl
     }
@@ -211,7 +223,10 @@ async function handleReceive(order) {
 async function openRefund(order) {
   let reason = ''
   try {
-    const { value } = await ElMessageBox.prompt('请填写退款原因（如：商品与描述不符 / 尺码不合适）', '申请退款', {
+    const prompt = order.status === 3
+      ? '请填写退款原因。审核通过后，商家确认退货入库再提交退款。'
+      : '请填写退款原因（如：商品与描述不符 / 尺码不合适）'
+    const { value } = await ElMessageBox.prompt(prompt, '申请退款', {
       inputPlaceholder: '请输入退款原因',
       inputValidator: (val) => (val && val.trim().length >= 2 ? true : '退款原因至少 2 个字'),
       confirmButtonText: '提交申请',
@@ -235,7 +250,8 @@ const reviewItems = ref([])
 async function openReview(order) {
   const detail = await getMyOrderDetail(order.id)
   reviewOrder.value = order
-  reviewItems.value = (detail.items || []).map((item) => ({
+  const products = new Map((detail.items || []).map(item => [item.productId, item]))
+  reviewItems.value = [...products.values()].map((item) => ({
     productId: item.productId,
     productName: item.productName,
     pic: item.productPic,

@@ -28,9 +28,17 @@ public class CategoryService {
 
     /** 查询分类树（仅显示启用的分类），按排序降序 */
     public List<CategoryNodeVO> tree() {
+        return buildTree(true);
+    }
+
+    public List<CategoryNodeVO> adminTree() {
+        return buildTree(false);
+    }
+
+    private List<CategoryNodeVO> buildTree(boolean visibleOnly) {
         List<PmsCategory> categories = categoryMapper.selectList(
                 new LambdaQueryWrapper<PmsCategory>()
-                        .eq(PmsCategory::getStatus, 1)
+                        .eq(visibleOnly, PmsCategory::getStatus, 1)
                         .orderByDesc(PmsCategory::getSort));
         Map<Long, CategoryNodeVO> nodeMap = new LinkedHashMap<>();
         for (PmsCategory category : categories) {
@@ -39,10 +47,12 @@ public class CategoryService {
         List<CategoryNodeVO> roots = new ArrayList<>();
         for (CategoryNodeVO node : nodeMap.values()) {
             CategoryNodeVO parent = nodeMap.get(node.getParentId());
-            if (node.getParentId() == null || node.getParentId() == 0 || parent == null) {
+            if (node.getParentId() == null || node.getParentId() == 0) {
                 roots.add(node);
-            } else {
+            } else if (parent != null) {
                 parent.getChildren().add(node);
+            } else if (!visibleOnly) {
+                roots.add(node);
             }
         }
         return roots;

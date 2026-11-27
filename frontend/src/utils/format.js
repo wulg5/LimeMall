@@ -23,11 +23,12 @@ export const RETURN_STATUS = {
   1: { text: '历史审核通过', type: 'info' },
   2: { text: '已拒绝', type: 'danger' },
   3: { text: '退款处理中', type: 'warning' },
-  4: { text: '已退款', type: 'success' }
+  4: { text: '已退款', type: 'success' },
+  5: { text: '待退货入库', type: 'warning' }
 }
 
 export function isRefundActive(status) {
-  return status === 0 || status === 3
+  return status === 0 || status === 3 || status === 5
 }
 
 /** 会员等级字典 */

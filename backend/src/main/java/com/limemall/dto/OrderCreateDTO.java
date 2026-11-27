@@ -50,5 +50,8 @@ public class OrderCreateDTO {
         @NotNull(message = "购买数量不能为空")
         @Min(value = 1, message = "购买数量至少为 1")
         private Integer quantity;
+
+        @DecimalMin(value = "0.01", message = "确认单价必须大于 0")
+        private BigDecimal expectedUnitPrice;
     }
 }

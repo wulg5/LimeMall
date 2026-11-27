@@ -14,6 +14,12 @@ import java.time.LocalDateTime;
 @Mapper
 public interface UmsPointsLogMapper extends BaseMapper<UmsPointsLog> {
 
+    @Select("""
+            SELECT IFNULL(SUM(amount), 0) FROM ums_points_log
+            WHERE member_id = #{memberId} AND type = 1 AND status = 0 AND expire_time > NOW()
+            """)
+    int sumUsable(Long memberId);
+
     /** 未来 N 天内将过期、尚未消耗的积分合计（会员中心到期提醒） */
     @Select("""
             SELECT IFNULL(SUM(amount), 0) FROM ums_points_log

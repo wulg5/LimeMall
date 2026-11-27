@@ -29,3 +29,7 @@ export function returnPage(params) {
 export function returnHandle(id, data) {
   return request.put(`/admin/returns/${id}/handle`, data)
 }
+
+export function confirmReturnedStock(id) {
+  return request.put(`/admin/returns/${id}/returned-stock`)
+}

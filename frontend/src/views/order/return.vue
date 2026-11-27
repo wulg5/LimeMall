@@ -43,8 +43,11 @@
           <template #default="{ row }">
             <el-button v-if="row.status === 0 && userStore.hasPerm('oms:return:handle')"
                        link type="primary" @click="openHandle(row)">审核</el-button>
+            <el-button v-else-if="row.status === 5 && userStore.hasPerm('oms:return:handle')"
+                       link type="primary" :loading="stockConfirmingId === row.id"
+                       @click="handleReturnedStock(row)">确认退货入库</el-button>
             <span v-else class="handled-text">
-              {{ row.handleNote || (row.status === 3 ? '等待渠道确认' : '已处理') }}
+              {{ row.handleNote || (row.status === 3 ? '等待退款确认' : (row.status === 5 ? '等待退货入库' : '已处理')) }}
             </span>
           </template>
         </el-table-column>
@@ -84,7 +87,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { returnPage, returnHandle } from '@/api/order'
+import { confirmReturnedStock, returnPage, returnHandle } from '@/api/order'
 import { money, RETURN_STATUS } from '@/utils/format'
 
 const userStore = useUserStore()
@@ -99,6 +102,7 @@ const handleVisible = ref(false)
 const saving = ref(false)
 const current = ref(null)
 const handleNote = ref('')
+const stockConfirmingId = ref(null)
 
 onMounted(load)
 
@@ -136,11 +140,29 @@ function openHandle(row) {
   handleVisible.value = true
 }
 
+async function handleReturnedStock(row) {
+  try {
+    await ElMessageBox.confirm('请确认退回商品已验收入库。确认后将提交退款。', '确认退货入库', {
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  stockConfirmingId.value = row.id
+  try {
+    await confirmReturnedStock(row.id)
+    ElMessage.success('已确认退货入库，退款处理中')
+    await load()
+  } finally {
+    stockConfirmingId.value = null
+  }
+}
+
 async function submitHandle(approve) {
   try {
     await ElMessageBox.confirm(
       approve
-        ? '支付宝确认退款后，订单将关闭并回补库存和优惠券。确定通过该退款申请吗？'
+        ? '已收货订单须先确认退货入库，退款完成后将关闭订单并回补库存。确定通过申请吗？'
         : '确定拒绝该退款申请吗？',
       '审核确认',
       { type: approve ? 'warning' : 'info' }
@@ -151,7 +173,7 @@ async function submitHandle(approve) {
   saving.value = true
   try {
     await returnHandle(current.value.id, { approve, handleNote: handleNote.value || undefined })
-    ElMessage.success(approve ? '退款已提交，等待支付宝确认' : '已拒绝该退款申请')
+    ElMessage.success(approve ? '审核通过，请查看退款状态' : '已拒绝该退款申请')
     handleVisible.value = false
     load()
   } finally {

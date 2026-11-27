@@ -30,6 +30,8 @@ public class OrderVO {
     /** 状态：0待付款 1待发货 2已发货 3已完成 4已关闭 */
     private Integer status;
     private Integer refundStatus;
+    private LocalDateTime paymentDeadline;
+    private LocalDateTime returnDeadline;
 
     /** 商品件数 */
     private Integer itemCount;

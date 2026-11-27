@@ -46,4 +46,12 @@ public class OrderReturnController {
         orderReturnService.handle(id, dto);
         return Result.ok();
     }
+
+    @PutMapping("/{id}/returned-stock")
+    @PreAuthorize("hasAuthority('oms:return:handle')")
+    @Operation(summary = "确认退货入库并提交退款")
+    public Result<Void> confirmReturnedStock(@PathVariable Long id) {
+        orderReturnService.confirmReturnedStock(id);
+        return Result.ok();
+    }
 }
