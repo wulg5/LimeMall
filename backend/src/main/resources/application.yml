@@ -5,6 +5,11 @@ server:
 spring:
   application:
     name: limemall-backend
+  task:
+    scheduling:
+      # 退款网关可能较慢，给超时关单留出独立调度线程。
+      pool:
+        size: 2
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 支持环境变量覆盖：MYSQL_HOST / MYSQL_PORT / MYSQL_DB / MYSQL_USER / MYSQL_PASSWORD

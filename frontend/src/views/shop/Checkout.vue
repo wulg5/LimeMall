@@ -31,7 +31,7 @@
           <div class="specs">{{ item.specs }}</div>
         </div>
         <span class="qty">× {{ item.quantity }}</span>
-        <span class="subtotal">{{ money(item.price * item.quantity) }}</span>
+        <span class="subtotal">{{ quoteItems.has(item.skuId) ? money(quoteItems.get(item.skuId).itemAmount) : '—' }}</span>
       </div>
     </div>
 
@@ -40,11 +40,11 @@
       <h2>优惠券</h2>
       <div v-if="usableCoupons.length" class="coupon-list">
         <div class="coupon-option" :class="{ active: couponMemberId === null }"
-             @click="couponMemberId = null">
+             @click="selectCoupon(null)">
           不使用优惠券
         </div>
         <div v-for="coupon in usableCoupons" :key="coupon.id" class="coupon-option"
-             :class="{ active: couponMemberId === coupon.id }" @click="couponMemberId = coupon.id">
+             :class="{ active: couponMemberId === coupon.id }" @click="selectCoupon(coupon.id)">
           <span>{{ coupon.name }}</span>
           <b>{{ coupon.type === 1 ? `减 ${Number(coupon.amount)} 元` : `${Number(coupon.amount)} 折` }}</b>
         </div>
@@ -56,15 +56,18 @@
     </div>
 
     <!-- 金额汇总 -->
-    <div class="summary-bar">
+    <div v-if="!quote && !quoting" class="section-card">
+      <el-button @click="loadQuote(null)">重新获取结算金额</el-button>
+    </div>
+    <div v-if="quote" class="summary-bar" v-loading="quoting">
       <div class="amounts">
-        <span>商品总额：{{ money(totalAmount) }}</span>
-        <span>运费：{{ money(freightAmount) }}<i v-if="(shopStore.info?.level ?? 1) >= 3">（金卡会员免运费）</i><i v-else-if="freightAmount > 0">（满 99 包邮）</i></span>
-        <span>优惠：-{{ money(couponAmount) }}</span>
+        <span>商品总额：{{ money(quote.totalAmount) }}</span>
+        <span>运费：{{ money(quote.freightAmount) }}<i v-if="(shopStore.info?.level ?? 1) >= 3">（金卡会员免运费）</i><i v-else-if="quote.freightAmount > 0">（满 99 包邮）</i></span>
+        <span>优惠：-{{ money(quote.couponAmount) }}</span>
       </div>
       <div class="pay-row">
-        <span>应付金额：<b class="pay-amount">{{ money(payAmount) }}</b></span>
-        <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="handleSubmit">
+        <span>应付金额：<b class="pay-amount">{{ money(quote.payAmount) }}</b></span>
+        <el-button type="primary" size="large" class="submit-btn" :loading="submitting" :disabled="quoting" @click="handleSubmit">
           提交订单
         </el-button>
       </div>
@@ -76,7 +79,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createOrder, getMyCoupons } from '@/api/portal'
+import { createOrder, getMyCoupons, getOrderQuote } from '@/api/portal'
 import { useCartStore } from '@/stores/cart'
 import { useShopStore } from '@/stores/shop'
 import { money } from '@/utils/format'
@@ -87,7 +90,10 @@ const shopStore = useShopStore()
 
 const formRef = ref()
 const submitting = ref(false)
-const items = ref([...cartStore.checkedItems])
+const items = cartStore.checkedItems.map(item => ({ ...item }))
+const orderItems = items.map(({ skuId, quantity }) => ({ skuId, quantity }))
+const quote = ref(null)
+const quoting = ref(true)
 const coupons = ref([])
 const couponMemberId = ref(null)
 
@@ -107,58 +113,56 @@ const rules = {
   receiverAddress: [{ required: true, message: '请输入收货地址', trigger: 'blur' }]
 }
 
-const totalAmount = computed(() =>
-  items.value.reduce((sum, item) => sum + item.price * item.quantity, 0)
-)
+const quoteItems = computed(() => new Map(quote.value?.items.map(item => [item.skuId, item])))
+const usableCoupons = computed(() => quote.value ? coupons.value.filter(coupon =>
+  coupon.status === 0 && Number(quote.value.totalAmount) >= Number(coupon.minAmount)
+) : [])
 
-const usableCoupons = computed(() =>
-  coupons.value.filter((coupon) => coupon.status === 0 && totalAmount.value >= Number(coupon.minAmount))
-)
-
-const selectedCoupon = computed(() =>
-  coupons.value.find((coupon) => coupon.id === couponMemberId.value) || null
-)
-
-const couponAmount = computed(() => {
-  if (!selectedCoupon.value) return 0
-  const coupon = selectedCoupon.value
-  const discount = coupon.type === 1
-    ? Number(coupon.amount)
-    : totalAmount.value * (10 - Number(coupon.amount)) / 10
-  return Math.min(discount, totalAmount.value)
-})
-
-const freightAmount = computed(() => {
-  // 金卡及以上会员全场免运费；其余满 99 包邮
-  if ((shopStore.info?.level ?? 1) >= 3) {
-    return 0
+async function loadQuote(selectedId) {
+  quoting.value = true
+  try {
+    quote.value = await getOrderQuote({ items: orderItems, couponMemberId: selectedId })
+    couponMemberId.value = selectedId
+    return true
+  } catch {
+    return false
+  } finally {
+    quoting.value = false
   }
-  return totalAmount.value < 99 ? 10 : 0
-})
+}
 
-const payAmount = computed(() =>
-  Math.max(0, totalAmount.value - couponAmount.value + freightAmount.value)
-)
+async function selectCoupon(selectedId) {
+  if (quoting.value || submitting.value || selectedId === couponMemberId.value) return
+  if (!await loadQuote(selectedId)) {
+    quote.value = null
+    await Promise.all([loadQuote(null), loadCoupons()])
+  }
+}
 
+async function loadCoupons() {
+  try {
+    coupons.value = await getMyCoupons()
+  } catch {
+    coupons.value = []
+  }
+}
 onMounted(async () => {
-  if (!items.value.length) {
+  if (!items.length) {
     ElMessage.warning('请先在购物车勾选要结算的商品')
     router.replace('/shop/cart')
     return
   }
-  try {
-    coupons.value = await getMyCoupons()
-  } catch (e) {
-    coupons.value = []
-  }
+  await Promise.all([loadQuote(null), loadCoupons()])
 })
 
 async function handleSubmit() {
-  await formRef.value.validate()
+  if (!quote.value || quoting.value || submitting.value) return
   submitting.value = true
   try {
+    await formRef.value.validate()
     const order = await createOrder({
-      items: items.value.map((item) => ({ skuId: item.skuId, quantity: item.quantity })),
+      items: orderItems,
+      expectedPayAmount: quote.value.payAmount,
       receiverName: form.receiverName,
       receiverPhone: form.receiverPhone,
       receiverAddress: form.receiverAddress,
@@ -172,6 +176,14 @@ async function handleSubmit() {
       { type: 'success', confirmButtonText: '去支付' }
     )
     router.push('/shop/orders')
+  } catch (error) {
+    // 表单校验错误由表单提示，订单错误已由请求拦截器提示。
+    if (error instanceof Error) {
+      const selectedId = couponMemberId.value
+      quote.value = null
+      const [refreshed] = await Promise.all([loadQuote(selectedId), loadCoupons()])
+      if (!refreshed && selectedId !== null) await loadQuote(null)
+    }
   } finally {
     submitting.value = false
   }

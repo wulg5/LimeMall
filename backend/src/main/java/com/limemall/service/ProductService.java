@@ -1,6 +1,7 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.limemall.common.BusinessException;
 import com.limemall.common.PageResult;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -72,10 +74,10 @@ public class ProductService {
         wrapper.like(StringUtils.hasText(name), PmsProduct::getName, name)
                 .eq(publishStatus != null, PmsProduct::getPublishStatus, publishStatus)
                 .eq(brandId != null, PmsProduct::getBrandId, brandId);
+        boolean displayPriceSort = "priceAsc".equals(sort) || "priceDesc".equals(sort);
         switch (sort == null ? "" : sort) {
             case "sales" -> wrapper.orderByDesc(PmsProduct::getSales);
-            case "priceAsc" -> wrapper.orderByAsc(PmsProduct::getPrice);
-            case "priceDesc" -> wrapper.orderByDesc(PmsProduct::getPrice);
+            case "priceAsc", "priceDesc" -> wrapper.eq(PmsProduct::getDeleteStatus, 0);
             default -> wrapper.orderByDesc(PmsProduct::getSort).orderByDesc(PmsProduct::getId);
         }
         if (categoryId != null) {
@@ -91,7 +93,10 @@ public class ProductService {
                 wrapper.eq(PmsProduct::getCategoryId, categoryId);
             }
         }
-        Page<PmsProduct> page = productMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        Page<PmsProduct> request = new Page<>(pageNum, pageSize);
+        IPage<PmsProduct> page = displayPriceSort
+                ? productMapper.selectPageByDisplayPrice(request, wrapper, "priceAsc".equals(sort), LocalDateTime.now())
+                : productMapper.selectPage(request, wrapper);
 
         // 批量装载品牌、分类名称与评分聚合，避免 N+1 查询
         Map<Long, String> brandNames = brandMapper.selectList(null).stream()
@@ -99,7 +104,7 @@ public class ProductService {
         Map<Long, String> categoryNames = categoryMapper.selectList(null).stream()
                 .collect(Collectors.toMap(PmsCategory::getId, PmsCategory::getName));
         Map<Long, ProductRatingVO> ratings = commentService.allRatings();
-        Map<Long, BigDecimal> flashPrices = flashSaleService.activeMinPriceByProduct();
+        Map<Long, BigDecimal> flashPrices = displayPriceSort ? Map.of() : flashSaleService.activeMinPriceByProduct();
 
         List<ProductVO> records = page.getRecords().stream().map(product -> {
             ProductVO vo = new ProductVO();
@@ -111,7 +116,7 @@ public class ProductService {
                 vo.setAvgRating(rating.getAvgRating());
                 vo.setCommentCount(rating.getCommentCount());
             }
-            vo.setFlashPrice(flashPrices.get(product.getId()));
+            vo.setFlashPrice(displayPriceSort ? product.getFlashPrice() : flashPrices.get(product.getId()));
             return vo;
         }).toList();
         return PageResult.of(page, records);

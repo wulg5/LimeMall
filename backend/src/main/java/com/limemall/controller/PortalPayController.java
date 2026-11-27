@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 /**
@@ -23,6 +26,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PortalPayController {
 
+    private static final DateTimeFormatter PROVIDER_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private final AlipayService alipayService;
     private final OrderService orderService;
 
@@ -32,7 +37,7 @@ public class PortalPayController {
             log.warn("支付宝回调验签失败，out_trade_no={}", params.get("out_trade_no"));
             return "failure";
         }
-        if (!alipayService.getAppId().equals(params.get("app_id"))) {
+        if (params.get("app_id") == null || !params.get("app_id").equals(alipayService.getAppId())) {
             log.warn("支付宝回调 app_id 不匹配：{}", params.get("app_id"));
             return "failure";
         }
@@ -42,8 +47,12 @@ public class PortalPayController {
         }
         String orderSn = params.get("out_trade_no");
         try {
-            orderService.payByOrderSn(orderSn, new BigDecimal(params.get("total_amount")));
-            log.info("支付宝回调入账成功：{}", orderSn);
+            String providerTime = params.get("gmt_payment");
+            LocalDateTime paidAt = providerTime == null || providerTime.isBlank() ? LocalDateTime.now()
+                    : LocalDateTime.parse(providerTime, PROVIDER_TIME).atZone(ZoneId.of("Asia/Shanghai"))
+                    .withZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
+            orderService.payByOrderSn(orderSn, new BigDecimal(params.get("total_amount")), paidAt);
+            log.info("支付宝付款通知已处理：{}", orderSn);
             return "success";
         } catch (Exception e) {
             log.error("支付宝回调处理失败：{}", orderSn, e);

@@ -41,8 +41,8 @@ export const useCartStore = defineStore('cart', {
     add(item) {
       const existing = this.items.find((it) => it.skuId === item.skuId)
       if (existing) {
-        existing.quantity = Math.min(existing.quantity + item.quantity, existing.stock || 999)
-        existing.checked = true
+        const quantity = Math.min(existing.quantity + item.quantity, item.stock ?? 999)
+        Object.assign(existing, item, { quantity, checked: true })
       } else {
         this.items.push({ ...item, checked: true })
       }
@@ -54,8 +54,7 @@ export const useCartStore = defineStore('cart', {
       this.items.forEach((it) => { it.checked = false })
       const existing = this.items.find((it) => it.skuId === item.skuId)
       if (existing) {
-        existing.quantity = item.quantity
-        existing.checked = true
+        Object.assign(existing, item, { checked: true })
       } else {
         this.items.push({ ...item, checked: true })
       }

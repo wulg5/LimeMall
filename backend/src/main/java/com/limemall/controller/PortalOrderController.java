@@ -3,11 +3,13 @@ package com.limemall.controller;
 import com.limemall.common.PageResult;
 import com.limemall.common.Result;
 import com.limemall.dto.OrderCreateDTO;
+import com.limemall.dto.OrderQuoteDTO;
 import com.limemall.dto.ReturnApplyDTO;
 import com.limemall.security.SecurityUtils;
 import com.limemall.service.OrderReturnService;
 import com.limemall.service.OrderService;
 import com.limemall.vo.OrderDetailVO;
+import com.limemall.vo.OrderQuoteVO;
 import com.limemall.vo.OrderVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,6 +42,12 @@ public class PortalOrderController {
     @Operation(summary = "提交订单（扣库存 + 核销优惠券）")
     public Result<OrderDetailVO> create(@Valid @RequestBody OrderCreateDTO dto) {
         return Result.ok(orderService.createOrder(SecurityUtils.getMemberId(), dto));
+    }
+
+    @PostMapping("/quote")
+    @Operation(summary = "查询当前结算金额（不扣库存或核销券）")
+    public Result<OrderQuoteVO> quote(@Valid @RequestBody OrderQuoteDTO dto) {
+        return Result.ok(orderService.quote(SecurityUtils.getMemberId(), dto));
     }
 
     @GetMapping

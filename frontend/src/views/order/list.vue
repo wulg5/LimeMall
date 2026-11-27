@@ -62,9 +62,9 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="row.status === 1 && userStore.hasPerm('oms:order:deliver')"
+            <el-button v-if="row.status === 1 && !isRefundActive(row.refundStatus) && userStore.hasPerm('oms:order:deliver')"
                        link type="success" @click="openDeliver(row)">发货</el-button>
-            <el-button v-if="(row.status === 0 || row.status === 1) && userStore.hasPerm('oms:order:close')"
+            <el-button v-if="row.status === 0 && userStore.hasPerm('oms:order:close')"
                        link type="danger" @click="handleClose(row)">关闭</el-button>
           </template>
         </el-table-column>
@@ -140,7 +140,7 @@
         <div v-if="detail.returnApply" class="detail-section">
           <div class="section-title">退款申请</div>
           <el-alert :closable="false"
-                    :type="detail.returnApply.status === 0 ? 'warning' : detail.returnApply.status === 1 ? 'success' : 'error'"
+                    :type="RETURN_STATUS[detail.returnApply.status]?.type === 'danger' ? 'error' : RETURN_STATUS[detail.returnApply.status]?.type"
                     :title="`${RETURN_STATUS[detail.returnApply.status]?.text} · 退款金额 ${money(detail.returnApply.amount)}`">
             <p class="return-reason">原因：{{ detail.returnApply.reason }}</p>
             <p v-if="detail.returnApply.description" class="return-reason">说明：{{ detail.returnApply.description }}</p>
@@ -148,7 +148,7 @@
           </el-alert>
         </div>
 
-        <div v-if="detail.status === 1 && userStore.hasPerm('oms:order:deliver')" class="detail-footer">
+        <div v-if="detail.status === 1 && !isRefundActive(detail.returnApply?.status) && userStore.hasPerm('oms:order:deliver')" class="detail-footer">
           <el-button type="primary" @click="openDeliver(detail)">去发货</el-button>
         </div>
       </div>
@@ -185,7 +185,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { orderPage, orderDetail, orderDeliver, orderClose } from '@/api/order'
-import { money, ORDER_STATUS, RETURN_STATUS, specsToText } from '@/utils/format'
+import { isRefundActive, money, ORDER_STATUS, RETURN_STATUS, specsToText } from '@/utils/format'
 
 const route = useRoute()
 const userStore = useUserStore()

@@ -64,7 +64,7 @@ public class OrderController {
 
     @PutMapping("/{id}/close")
     @PreAuthorize("hasAuthority('oms:order:close')")
-    @Operation(summary = "关闭订单（回补库存与优惠券）")
+    @Operation(summary = "关闭待付款订单（回补库存与优惠券）")
     public Result<Void> close(@PathVariable Long id) {
         orderService.close(id);
         return Result.ok();

@@ -10,11 +10,16 @@ import java.time.LocalDateTime;
 
 /**
  * 退款申请实体，对应表 oms_order_return。
- * 审核状态：0待审核 1已通过 2已拒绝；审核通过后订单关闭、库存回补。
+ * 审核通过后等待支付渠道确认，再关闭订单并回补库存。
  */
 @Data
 @TableName("oms_order_return")
 public class OmsOrderReturn {
+
+    public static final int PENDING = 0;
+    public static final int REFUNDED = 4;
+    public static final int REJECTED = 2;
+    public static final int PROCESSING = 3;
 
     /** 主键ID */
     @TableId(type = IdType.AUTO)
@@ -38,7 +43,7 @@ public class OmsOrderReturn {
     /** 退款金额 */
     private BigDecimal amount;
 
-    /** 审核状态：0待审核 1已通过 2已拒绝 */
+    /** 审核状态：0待审核 1历史审核通过 2已拒绝 3退款处理中 4已退款 */
     private Integer status;
 
     /** 审核备注 */

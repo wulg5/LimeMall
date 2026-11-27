@@ -266,7 +266,7 @@ CREATE TABLE `oms_order_return` (
   `reason`      VARCHAR(255) NOT NULL COMMENT '退款原因',
   `description` VARCHAR(500) DEFAULT NULL COMMENT '问题描述',
   `amount`      DECIMAL(10,2) NOT NULL COMMENT '退款金额',
-  `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '审核状态：0待审核 1已通过 2已拒绝',
+  `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '审核状态：0待审核 1历史审核通过 2已拒绝 3退款处理中 4已退款',
   `handle_note` VARCHAR(255) DEFAULT NULL COMMENT '审核备注',
   `handle_time` DATETIME     DEFAULT NULL COMMENT '审核时间',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',

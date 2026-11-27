@@ -1,6 +1,7 @@
 package com.limemall.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -41,6 +42,10 @@ public class PmsProduct {
 
     /** 展示价（取SKU最低价） */
     private BigDecimal price;
+
+    /** 生效秒杀价，仅价格排序查询返回。 */
+    @TableField(exist = false)
+    private BigDecimal flashPrice;
 
     /** 划线原价 */
     private BigDecimal originalPrice;

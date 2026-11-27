@@ -25,7 +25,7 @@ public interface DashboardMapper {
     Long countTodayOrders();
 
     /** 今日成交金额（已支付订单实付金额之和） */
-    @Select("SELECT IFNULL(SUM(pay_amount), 0) FROM oms_order WHERE status IN (1,2,3) AND create_time >= CURDATE()")
+    @Select("SELECT IFNULL(SUM(pay_amount), 0) FROM oms_order WHERE status IN (1,2,3) AND pay_time >= CURDATE() AND pay_time < CURDATE() + INTERVAL 1 DAY")
     BigDecimal sumTodayPayAmount();
 
     /** 今日新增会员数 */
@@ -52,13 +52,13 @@ public interface DashboardMapper {
      * 按天统计销售趋势（近 N 天，仅已支付订单）。
      */
     @Select("""
-            SELECT DATE(create_time) AS date,
+            SELECT DATE(pay_time) AS date,
                    COUNT(*) AS orderCount,
                    IFNULL(SUM(pay_amount), 0) AS payAmount
             FROM oms_order
-            WHERE status IN (1,2,3) AND create_time >= #{start}
-            GROUP BY DATE(create_time)
-            ORDER BY DATE(create_time)
+            WHERE status IN (1,2,3) AND pay_time >= #{start} AND pay_time < CURDATE() + INTERVAL 1 DAY
+            GROUP BY DATE(pay_time)
+            ORDER BY DATE(pay_time)
             """)
     List<TrendPointVO> selectTrend(@Param("start") LocalDate start);
 

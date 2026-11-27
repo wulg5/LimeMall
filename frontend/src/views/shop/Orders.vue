@@ -35,15 +35,18 @@
             <span v-if="order.status === 0" class="pay-tip">{{ remainText(order) }}</span>
           </div>
           <div class="order-actions">
+            <el-tag v-if="order.refundStatus != null" :type="RETURN_STATUS[order.refundStatus]?.type">
+              {{ RETURN_STATUS[order.refundStatus]?.text }}
+            </el-tag>
             <el-button size="small" @click="openDetail(order)">订单详情</el-button>
             <template v-if="order.status === 0">
               <el-button size="small" type="primary" @click="handlePay(order)">去支付</el-button>
               <el-button size="small" @click="handleCancel(order)">取消订单</el-button>
             </template>
-            <template v-if="order.status === 1 || order.status === 2">
+            <template v-if="(order.status === 1 || order.status === 2) && !isRefundActive(order.refundStatus)">
               <el-button size="small" type="warning" plain @click="openRefund(order)">申请退款</el-button>
             </template>
-            <template v-if="order.status === 2">
+            <template v-if="order.status === 2 && !isRefundActive(order.refundStatus)">
               <el-button size="small" type="primary" @click="handleReceive(order)">确认收货</el-button>
             </template>
             <template v-if="order.status === 3 && !order.commented">
@@ -89,7 +92,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   cancelOrder, getMyOrderDetail, getMyOrders, payOrder, receiveOrder, refundOrder, submitComments
 } from '@/api/portal'
-import { money, ORDER_STATUS } from '@/utils/format'
+import { isRefundActive, money, ORDER_STATUS, RETURN_STATUS } from '@/utils/format'
 
 /** 与后端 limemall.order.pay-timeout-minutes 保持一致（默认 30 分钟） */
 const PAY_TIMEOUT_MINUTES = 30

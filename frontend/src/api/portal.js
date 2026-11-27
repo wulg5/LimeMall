@@ -89,6 +89,10 @@ export function submitComments(data) {
 
 /* ---------------- 订单 ---------------- */
 
+export function getOrderQuote(data) {
+  return request.post('/portal/orders/quote', data)
+}
+
 export function createOrder(data) {
   return request.post('/portal/orders', data)
 }

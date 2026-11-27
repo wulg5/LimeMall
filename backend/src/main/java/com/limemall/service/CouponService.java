@@ -226,8 +226,8 @@ public class CouponService {
             vo.setEndTime(coupon.getEndTime());
             // 未使用但已过期 → 展示为已过期
             int status = record.getStatus();
-            if (status == 0 && coupon.getEndTime().isBefore(now)) {
-                status = 2;
+            if (status == 0 && !isUsableNow(coupon, now)) {
+                status = coupon.getEndTime().isBefore(now) ? 2 : 3;
             }
             vo.setStatus(status);
             return vo;
@@ -313,6 +313,11 @@ public class CouponService {
     // ==================================================================
     // 私有方法
     // ==================================================================
+
+    static boolean isUsableNow(SmsCoupon coupon, LocalDateTime now) {
+        return coupon != null && coupon.getStatus() == 1
+                && !now.isBefore(coupon.getStartTime()) && !now.isAfter(coupon.getEndTime());
+    }
 
     private void validateTimeRange(CouponSaveDTO dto) {
         if (dto.getEndTime().isBefore(dto.getStartTime())) {

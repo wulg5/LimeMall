@@ -52,7 +52,7 @@ pms_brand    ──< pms_product
 | 10 | `pms_sku` | 商品 SKU | `specs` 保存规格 JSON（如颜色+尺码组合）；`sku_code` 唯一索引防重 |
 | 11 | `oms_order` | 订单主表 | 状态机 `0待付款→1待发货→2已发货→3已完成`，`0/1→4已关闭`；收货信息快照；金额字段 `pay_amount = total_amount - coupon_amount + freight_amount` 恒等式 |
 | 12 | `oms_order_item` | 订单明细 | 商品快照字段；`idx_order` 支撑详情联查 |
-| 13 | `oms_order_return` | 退款申请 | 状态 `0待审核/1已通过/2已拒绝`；审核动作与订单状态联动（通过则订单关闭、库存回补） |
+| 13 | `oms_order_return` | 退款申请 | 状态 `0待审核/1历史审核通过/2已拒绝/3退款处理中/4已退款`；支付渠道确认后关单并回补库存 |
 | 14 | `sms_coupon` | 优惠券 | `type` 区分满减券/折扣券；`receive_count/used_count` 计数冗余；`per_limit` 每人限领；`points_price` 支持积分商城兑换（0=不可兑换） |
 | 15 | `sms_coupon_member` | 会员优惠券 | 领取记录 + 使用状态 + 关联订单，支撑"我的优惠券"与核销追溯 |
 | 16 | `ums_chat_message` | 客服聊天消息 | `from_type` 区分发送方（会员/管理员）；读历史即按接收方标记已读；纯文本存储防 XSS |
@@ -78,7 +78,7 @@ SPU（Standard Product Unit）描述"商品是什么"，SKU（Stock Keeping Unit
                 支付                发货                确认收货
  0 待付款 ──────────→ 1 待发货 ──────────→ 2 已发货 ──────────→ 3 已完成
     │                    │
-    │ 取消               │ 管理员关闭 / 退款通过
+    │ 取消               │ 支付渠道确认退款
     └────────→ 4 已关闭 ←┘
 ```
 

@@ -44,7 +44,7 @@
             <el-button v-if="row.status === 0 && userStore.hasPerm('oms:return:handle')"
                        link type="primary" @click="openHandle(row)">审核</el-button>
             <span v-else class="handled-text">
-              {{ row.handleNote || '已处理' }}
+              {{ row.handleNote || (row.status === 3 ? '等待渠道确认' : '已处理') }}
             </span>
           </template>
         </el-table-column>
@@ -140,7 +140,7 @@ async function submitHandle(approve) {
   try {
     await ElMessageBox.confirm(
       approve
-        ? '通过后订单将关闭，库存与优惠券自动回补。确定通过该退款申请吗？'
+        ? '支付宝确认退款后，订单将关闭并回补库存和优惠券。确定通过该退款申请吗？'
         : '确定拒绝该退款申请吗？',
       '审核确认',
       { type: approve ? 'warning' : 'info' }
@@ -151,7 +151,7 @@ async function submitHandle(approve) {
   saving.value = true
   try {
     await returnHandle(current.value.id, { approve, handleNote: handleNote.value || undefined })
-    ElMessage.success(approve ? '退款已通过，订单已关闭' : '已拒绝该退款申请')
+    ElMessage.success(approve ? '退款已提交，等待支付宝确认' : '已拒绝该退款申请')
     handleVisible.value = false
     load()
   } finally {

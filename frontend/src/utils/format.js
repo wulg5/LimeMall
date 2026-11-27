@@ -20,8 +20,14 @@ export const ORDER_STATUS = {
 /** 退款状态字典 */
 export const RETURN_STATUS = {
   0: { text: '待审核', type: 'warning' },
-  1: { text: '已通过', type: 'success' },
-  2: { text: '已拒绝', type: 'danger' }
+  1: { text: '历史审核通过', type: 'info' },
+  2: { text: '已拒绝', type: 'danger' },
+  3: { text: '退款处理中', type: 'warning' },
+  4: { text: '已退款', type: 'success' }
+}
+
+export function isRefundActive(status) {
+  return status === 0 || status === 3
 }
 
 /** 会员等级字典 */
@@ -36,7 +42,8 @@ export const MEMBER_LEVEL = {
 export const COUPON_MEMBER_STATUS = {
   0: { text: '未使用', type: 'warning' },
   1: { text: '已使用', type: 'success' },
-  2: { text: '已过期', type: 'info' }
+  2: { text: '已过期', type: 'info' },
+  3: { text: '暂不可用', type: 'info' }
 }
 
 /**

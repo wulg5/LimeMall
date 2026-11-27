@@ -1,5 +1,8 @@
 package com.limemall.service;
 
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.limemall.common.BusinessException;
 import com.limemall.config.AlipayProperties;
 import com.limemall.dto.PayConfigSaveDTO;
@@ -10,7 +13,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -18,7 +27,9 @@ import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Map;
@@ -49,7 +60,12 @@ public class AlipayService {
     public static final String KEY_NOTIFY_URL = "alipay.notify-url";
     public static final String KEY_RETURN_URL = "alipay.return-url";
 
+    private static final ZoneId ALIPAY_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter ALIPAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+
     private final AlipayProperties envProperties;
+    private final ObjectMapper objectMapper;
     private final SysConfigService configService;
 
     private volatile String cachedPrivateRaw;
@@ -129,33 +145,127 @@ public class AlipayService {
     /**
      * 构建电脑网站支付跳转 URL（跳转支付宝收银台）。
      */
-    public String buildPagePayUrl(OmsOrder order) {
+    public String buildPagePayUrl(OmsOrder order, LocalDateTime paymentDeadline) {
         ResolvedConfig config = resolve();
         String bizContent = "{"
                 + "\"out_trade_no\":\"" + order.getOrderSn() + "\","
                 + "\"product_code\":\"FAST_INSTANT_TRADE_PAY\","
                 + "\"total_amount\":\"" + order.getPayAmount().toPlainString() + "\","
+                + "\"time_expire\":\"" + paymentDeadline.atZone(ZoneId.systemDefault())
+                .withZoneSameInstant(ALIPAY_ZONE).format(ALIPAY_TIME) + "\","
                 + "\"subject\":\"青柠商城订单 " + order.getOrderSn() + "\""
                 + "}";
-        TreeMap<String, String> params = new TreeMap<>();
-        params.put("app_id", config.appId());
-        params.put("method", "alipay.trade.page.pay");
-        params.put("format", "JSON");
-        params.put("charset", "utf-8");
-        params.put("sign_type", "RSA2");
-        params.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        params.put("version", "1.0");
-        params.put("biz_content", bizContent);
+        TreeMap<String, String> params = requestParameters(config, "alipay.trade.page.pay", bizContent);
         if (StringUtils.hasText(config.notifyUrl())) {
             params.put("notify_url", config.notifyUrl());
         }
         if (StringUtils.hasText(config.returnUrl())) {
             params.put("return_url", config.returnUrl());
         }
-        String content = buildContent(params);
-        params.put("sign", rsaSign(content, parsePrivateKey(config.privateKey())));
-        return config.gatewayUrl() + "?" + params.entrySet().stream()
-                .filter(entry -> StringUtils.hasText(entry.getValue()))
+        return config.gatewayUrl() + "?" + signAndEncode(config, params);
+    }
+
+    /** 全额原路退款。用商户订单号派生固定请求号，重试与查询均使用同一号码。 */
+    public boolean refund(String orderSn, BigDecimal amount) {
+        ResolvedConfig config = resolve();
+        // 即使暂停收新款，也必须能处理已付款订单的退款。
+        if (!StringUtils.hasText(config.appId()) || !StringUtils.hasText(config.privateKey())
+                || !StringUtils.hasText(config.publicKey())) {
+            throw new BusinessException("支付宝密钥未配置，退款等待处理");
+        }
+        String refundNo = "LMRF-" + orderSn;
+        var identity = objectMapper.createObjectNode()
+                .put("out_trade_no", orderSn).put("out_request_no", refundNo);
+        JsonNode result = gatewayCall(config, "alipay.trade.refund",
+                identity.deepCopy().put("refund_amount", amount.toPlainString()));
+        if ("10000".equals(result.path("code").asText())
+                && "Y".equals(result.path("fund_change").asText())
+                && orderSn.equals(result.path("out_trade_no").asText())
+                && sameAmount(amount, result.path("refund_fee"))) {
+            return true;
+        }
+        JsonNode query = gatewayCall(config, "alipay.trade.fastpay.refund.query", identity);
+        return "10000".equals(query.path("code").asText())
+                && "REFUND_SUCCESS".equals(query.path("refund_status").asText())
+                && orderSn.equals(query.path("out_trade_no").asText())
+                && refundNo.equals(query.path("out_request_no").asText())
+                && sameAmount(amount, query.path("refund_amount"));
+    }
+
+    private boolean sameAmount(BigDecimal expected, JsonNode amount) {
+        try {
+            return expected.compareTo(new BigDecimal(amount.asText())) == 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private JsonNode gatewayCall(ResolvedConfig config, String method, JsonNode content) {
+        try {
+            TreeMap<String, String> params = requestParameters(config, method, objectMapper.writeValueAsString(content));
+            HttpRequest request = HttpRequest.newBuilder(URI.create(config.gatewayUrl()))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+                    .POST(HttpRequest.BodyPublishers.ofString(signAndEncode(config, params)))
+                    .build();
+            HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != 200) {
+                throw new BusinessException("支付宝网关暂时不可用");
+            }
+            return verifiedResponse(config, method.replace('.', '_') + "_response", response.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("支付宝退款请求中断");
+        } catch (IOException e) {
+            throw new BusinessException("支付宝退款响应暂不可用");
+        }
+    }
+
+    /** RSA2 验签必须使用原始 JSON 子串，不能重新序列化后验签。 */
+    private JsonNode verifiedResponse(ResolvedConfig config, String responseName, String body) throws IOException {
+        try (var parser = objectMapper.createParser(body)) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                throw new BusinessException("支付宝退款响应格式不正确");
+            }
+            String response = null;
+            String signature = null;
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String field = parser.currentName();
+                JsonToken value = parser.nextToken();
+                if (responseName.equals(field) && value == JsonToken.START_OBJECT) {
+                    int start = Math.toIntExact(parser.currentTokenLocation().getCharOffset());
+                    parser.skipChildren();
+                    int end = Math.toIntExact(parser.currentLocation().getCharOffset());
+                    response = body.substring(start, end);
+                } else if ("sign".equals(field) && value == JsonToken.VALUE_STRING) {
+                    signature = parser.getText();
+                } else {
+                    parser.skipChildren();
+                }
+            }
+            if (response == null || signature == null || !verifySignature(config, response, signature)) {
+                throw new BusinessException("支付宝退款响应验签失败");
+            }
+            return objectMapper.readTree(response);
+        }
+    }
+
+    private TreeMap<String, String> requestParameters(ResolvedConfig config, String method, String bizContent) {
+        TreeMap<String, String> params = new TreeMap<>();
+        params.put("app_id", config.appId());
+        params.put("method", method);
+        params.put("format", "JSON");
+        params.put("charset", "utf-8");
+        params.put("sign_type", "RSA2");
+        params.put("timestamp", LocalDateTime.now(ALIPAY_ZONE).format(ALIPAY_TIME));
+        params.put("version", "1.0");
+        params.put("biz_content", bizContent);
+        return params;
+    }
+
+    private String signAndEncode(ResolvedConfig config, TreeMap<String, String> params) {
+        params.put("sign", rsaSign(buildContent(params), parsePrivateKey(config.privateKey())));
+        return params.entrySet().stream().filter(entry -> StringUtils.hasText(entry.getValue()))
                 .map(entry -> urlEncode(entry.getKey()) + "=" + urlEncode(entry.getValue()))
                 .collect(Collectors.joining("&"));
     }
@@ -175,14 +285,17 @@ public class AlipayService {
         if (!StringUtils.hasText(sign)) {
             return false;
         }
-        String content = buildContent(params);
+        return verifySignature(config, buildContent(params), sign);
+    }
+
+    private boolean verifySignature(ResolvedConfig config, String content, String sign) {
         try {
             Signature verifier = Signature.getInstance("SHA256withRSA");
             verifier.initVerify(parsePublicKey(config.publicKey()));
             verifier.update(content.getBytes(StandardCharsets.UTF_8));
             return verifier.verify(Base64.getDecoder().decode(sign));
         } catch (Exception e) {
-            log.warn("支付宝通知验签异常: {}", e.getMessage());
+            log.warn("支付宝签名校验失败", e);
             return false;
         }
     }
