@@ -317,8 +317,10 @@ CREATE TABLE `sms_coupon_member` (
   `order_id`     BIGINT UNSIGNED DEFAULT NULL COMMENT '使用订单ID',
   `receive_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '领取时间',
   `use_time`     DATETIME     DEFAULT NULL COMMENT '使用时间',
+  `exchange_request_id` CHAR(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '积分兑换请求号',
   PRIMARY KEY (`id`),
   KEY `idx_member` (`member_id`),
+  UNIQUE KEY `uk_member_exchange_request` (`member_id`, `exchange_request_id`),
   KEY `idx_coupon` (`coupon_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会员优惠券表';
 

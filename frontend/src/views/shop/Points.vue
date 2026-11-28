@@ -25,6 +25,18 @@
     <el-tabs v-model="activeTab" class="points-tabs" @tab-change="handleTabChange">
       <el-tab-pane label="兑换专区" name="exchange">
 
+    <div v-if="shopStore.token && Object.keys(pendingExchanges).length" class="rule-card">
+      <h3>待确认兑换</h3>
+      <ul>
+        <li v-for="attempt in pendingExchanges" :key="attempt.requestId">
+          {{ attempt.name }}（{{ attempt.expectedPoints }} 积分）
+          <el-button link type="primary" :loading="exchangingId === attempt.id" @click="handleExchange(attempt)">
+            确认兑换结果
+          </el-button>
+        </li>
+      </ul>
+    </div>
+
     <!-- 兑换列表 -->
     <div class="coupon-grid">
       <div v-for="coupon in coupons" :key="coupon.id" class="ex-card">
@@ -42,10 +54,11 @@
         <div class="ex-footer">
           <div class="ex-points">{{ coupon.pointsPrice }}<span> 积分</span></div>
           <el-button type="warning" size="small"
-                     :disabled="!shopStore.token || (shopStore.info?.points ?? 0) < coupon.pointsPrice"
+                     :disabled="!shopStore.token || (!pendingExchanges[coupon.id] && (shopStore.info?.points ?? 0) < coupon.pointsPrice)"
                      :loading="exchangingId === coupon.id"
                      @click="handleExchange(coupon)">
             {{ !shopStore.token ? '请先登录'
+              : pendingExchanges[coupon.id] ? '确认兑换结果'
               : (shopStore.info?.points ?? 0) < coupon.pointsPrice ? '积分不足' : '立即兑换' }}
           </el-button>
         </div>
@@ -111,11 +124,12 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { exchangeCoupon, getExchangeCoupons, getPointsRecords } from '@/api/portal'
 import { useShopStore } from '@/stores/shop'
+import { newCartRevision } from '@/stores/cart'
 import LevelBadge from '@/components/LevelBadge.vue'
 
 const POINTS_LOG_TYPES = { 1: '获取', 2: '消费', 3: '过期', 4: '退款撤回' }
@@ -130,13 +144,19 @@ const shopStore = useShopStore()
 
 const coupons = ref([])
 const exchangingId = ref(null)
+const pendingExchanges = ref({})
+const exchangeMemory = new Map()
 const activeTab = ref('exchange')
 const records = ref([])
 const recordsTotal = ref(0)
 const recordsPage = ref(1)
 const recordsLoading = ref(false)
 
+watch(() => shopStore.info?.id, syncPendingExchanges, { immediate: true })
+onUnmounted(() => window.removeEventListener('storage', syncPendingExchanges))
+
 onMounted(async () => {
+  window.addEventListener('storage', syncPendingExchanges)
   if (shopStore.token && !shopStore.info) {
     try {
       await shopStore.fetchMe()
@@ -167,27 +187,93 @@ async function loadRecords() {
   }
 }
 
-async function handleExchange(coupon) {
-  if (exchangingId.value !== null) return
-  const expectedPoints = coupon.pointsPrice
-  exchangingId.value = coupon.id
+function exchangeStorageKey() {
+  return shopStore.info?.id ? `lime_pending_exchanges:${shopStore.info.id}` : null
+}
+
+function readPendingExchanges(key) {
+  if (!key) return {}
+  if (exchangeMemory.has(key)) return exchangeMemory.get(key)
   try {
-    await ElMessageBox.confirm(
-      `将消耗 ${expectedPoints} 积分兑换「${coupon.name}」，兑换后发放至我的优惠券。确认兑换？`,
-      '积分兑换',
-      { type: 'warning' }
-    )
+    return JSON.parse(localStorage.getItem(key) || '{}') || {}
   } catch {
-    exchangingId.value = null
-    return
+    return {}
+  }
+}
+
+function syncPendingExchanges() {
+  pendingExchanges.value = readPendingExchanges(exchangeStorageKey())
+}
+
+function savePendingExchange(key, id, attempt) {
+  const pending = { ...readPendingExchanges(key) }
+  if (attempt) {
+    pending[id] = attempt
+  } else {
+    delete pending[id]
   }
   try {
-    await exchangeCoupon(coupon.id, expectedPoints)
-    ElMessage.success('兑换成功，优惠券已发放到「我的优惠券」')
-    await shopStore.fetchMe()
+    localStorage.setItem(key, JSON.stringify(pending))
+    exchangeMemory.delete(key)
+  } catch {
+    exchangeMemory.set(key, pending)
+  }
+  if (key === exchangeStorageKey()) pendingExchanges.value = pending
+}
+
+function clearPendingExchange(key, attempt) {
+  if (readPendingExchanges(key)[attempt.id]?.requestId === attempt.requestId) {
+    savePendingExchange(key, attempt.id, null)
+  }
+}
+
+async function handleExchange(coupon) {
+  const key = exchangeStorageKey()
+  if (!shopStore.token || !key || exchangingId.value !== null) return
+  exchangingId.value = coupon.id
+  try {
+    const exchange = () => submitExchange(key, coupon)
+    const locks = globalThis.navigator?.locks
+    if (locks) {
+      await locks.request(key, exchange)
+    } else {
+      await exchange()
+    }
   } finally {
     exchangingId.value = null
-    coupons.value = await getExchangeCoupons()
+  }
+}
+
+async function submitExchange(key, coupon) {
+  const stored = readPendingExchanges(key)[coupon.id]
+  // 当前按钮来自已刷新的待确认列表时，保留原请求号以防另一页刚完成它。
+  const attempt = stored || (coupon.requestId && coupon) || {
+    id: coupon.id, name: coupon.name, expectedPoints: coupon.pointsPrice, requestId: newCartRevision()
+  }
+  if (!stored && !coupon.requestId) {
+    try {
+      await ElMessageBox.confirm(
+        `将消耗 ${attempt.expectedPoints} 积分兑换「${attempt.name}」，兑换后发放至我的优惠券。确认兑换？`,
+        '积分兑换',
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+  }
+  if (!shopStore.token || key !== exchangeStorageKey()) return
+  savePendingExchange(key, coupon.id, attempt)
+  try {
+    await exchangeCoupon(coupon.id, attempt.expectedPoints, attempt.requestId)
+    clearPendingExchange(key, attempt)
+    ElMessage.success('兑换成功，优惠券已发放到「我的优惠券」')
+    if (key === exchangeStorageKey()) await shopStore.fetchMe()
+  } catch (error) {
+    if (error.businessRejected) clearPendingExchange(key, attempt)
+  } finally {
+    if (key === exchangeStorageKey()) {
+      coupons.value = await getExchangeCoupons().catch(() => coupons.value)
+    }
   }
 }
 </script>

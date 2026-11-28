@@ -90,14 +90,20 @@ function togglePanel() {
     // 实时通道：服务端推送变更事件即刷新；同时保留低频轮询兜底
     connectChatSocket(shopStore.token, () => loadMessages())
     startPoll()
+    document.addEventListener('visibilitychange', refreshWhenVisible)
   } else {
     closePanel()
   }
 }
 
+function refreshWhenVisible() {
+  if (!document.hidden) loadMessages()
+}
+
 function closePanel() {
   visible.value = false
   latestMessageRequest++
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
   stopPoll()
   disconnectChatSocket()
 }
@@ -116,7 +122,7 @@ function goLogin() {
 }
 
 async function loadMessages() {
-  if (!visible.value || !shopStore.token) return
+  if (document.hidden || !visible.value || !shopStore.token) return
   const request = ++latestMessageRequest
   try {
     const data = await getChatCurrent()
@@ -143,7 +149,7 @@ async function loadOlderMessages() {
   const sessionId = session.value?.id
   const token = shopStore.token
   const beforeId = messages.value[0]?.id
-  if (!sessionId || !beforeId || loadingOlder.value || !hasOlder.value) return
+  if (document.hidden || !sessionId || !beforeId || loadingOlder.value || !hasOlder.value) return
   loadingOlder.value = true
   try {
     const received = await getChatMessages(sessionId, beforeId)
@@ -186,10 +192,7 @@ function stopPoll() {
   }
 }
 
-onBeforeUnmount(() => {
-  stopPoll()
-  disconnectChatSocket()
-})
+onBeforeUnmount(closePanel)
 </script>
 
 <style scoped>

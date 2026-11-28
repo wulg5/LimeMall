@@ -243,7 +243,7 @@ const dealItems = computed(() => {
     }))
   }
   return [...hotProducts.value]
-    .filter((product) => Number(product.originalPrice) > Number(product.price))
+    .filter(product => product.stock > 0 && discountOf(product) > 0)
     .sort((a, b) => discountOf(b) - discountOf(a))
     .slice(0, 4)
     .map((product) => ({
@@ -252,7 +252,7 @@ const dealItems = computed(() => {
       productId: product.id,
       name: product.name,
       pic: product.mainPic,
-      price: Number(product.price),
+      price: offerPrice(product),
       originalPrice: Number(product.originalPrice),
       save: discountOf(product)
     }))
@@ -275,9 +275,13 @@ function bannerBg(banner) {
   return `linear-gradient(105deg, ${banner.bgFrom || '#0b3d33'} 0%, ${banner.bgTo || '#0d9488'} 100%)`
 }
 
+function offerPrice(product) {
+  return Number(product.displayPrice ?? product.price ?? 0)
+}
+
 function discountOf(product) {
   const original = Number(product.originalPrice || 0)
-  const price = Number(product.price || 0)
+  const price = offerPrice(product)
   return original > price ? (original - price).toFixed(0) : 0
 }
 

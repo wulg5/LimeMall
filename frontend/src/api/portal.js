@@ -71,8 +71,8 @@ export function getExchangeCoupons() {
 }
 
 /** 积分兑换优惠券 */
-export function exchangeCoupon(id, expectedPoints) {
-  return request.post(`/portal/coupons/${id}/exchange`, undefined, { params: { expectedPoints } })
+export function exchangeCoupon(id, expectedPoints, requestId) {
+  return request.post(`/portal/coupons/${id}/exchange`, undefined, { params: { expectedPoints, requestId } })
 }
 
 /* ---------------- 商品评价 ---------------- */

@@ -20,11 +20,10 @@ function isPortalRequest(config) {
 }
 
 request.interceptors.request.use((config) => {
-  const token = isPortalRequest(config)
-    ? useShopStore().token
-    : useUserStore().token
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  const store = isPortalRequest(config) ? useShopStore() : useUserStore()
+  store.refreshSessionState()
+  if (store.token) {
+    config.headers.Authorization = `Bearer ${store.token}`
   }
   return config
 })
@@ -36,19 +35,20 @@ request.interceptors.response.use(
       return res.data
     }
     if (res.code === 401) {
-      if (isPortalRequest(response.config)) {
-        useShopStore().logout()
+      const portal = isPortalRequest(response.config)
+      const store = portal ? useShopStore() : useUserStore()
+      const sent = response.config.headers.Authorization
+      if (!store.token || sent === `Bearer ${store.token}`) {
+        store.logout()
         ElMessage.error(res.message || '登录已过期，请重新登录')
-        window.location.href = '/shop/login'
-      } else {
-        useUserStore().logout()
-        ElMessage.error(res.message || '登录已过期，请重新登录')
-        window.location.href = '/admin/login'
+        window.location.href = portal ? '/shop/login' : '/admin/login'
       }
       return Promise.reject(new Error(res.message))
     }
     ElMessage.error(res.message || '操作失败')
-    return Promise.reject(new Error(res.message || '操作失败'))
+    const error = new Error(res.message || '操作失败')
+    error.businessRejected = res.code >= 400 && res.code < 500
+    return Promise.reject(error)
   },
   (error) => {
     const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'

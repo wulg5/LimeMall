@@ -25,6 +25,9 @@ public class SmsCouponMember {
     /** 会员ID */
     private Long memberId;
 
+    /** 积分兑换请求号，免费领取时为空。 */
+    private String exchangeRequestId;
+
     /** 状态：0未使用 1已使用 2已过期 */
     private Integer status;
 

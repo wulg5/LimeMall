@@ -296,8 +296,20 @@ public class CouponService {
      * - 全程同一事务，任一步失败自动回滚。
      */
     @Transactional
-    public void exchange(Long memberId, Long couponId, Integer expectedPoints) {
+    public void exchange(Long memberId, Long couponId, Integer expectedPoints, String requestId) {
+        if (requestId == null || !requestId.matches("[0-9a-f]{32}")) {
+            throw new BusinessException("兑换请求号无效，请刷新后重试");
+        }
         UmsMember member = memberMapper.lockById(memberId);
+        SmsCouponMember previous = couponMemberMapper.selectOne(new LambdaQueryWrapper<SmsCouponMember>()
+                .eq(SmsCouponMember::getMemberId, memberId)
+                .eq(SmsCouponMember::getExchangeRequestId, requestId));
+        if (previous != null) {
+            if (!couponId.equals(previous.getCouponId())) {
+                throw new BusinessException("该兑换请求号已用于其他优惠券");
+            }
+            return;
+        }
         SmsCoupon coupon = couponMapper.selectById(couponId);
         LocalDateTime now = LocalDateTime.now();
         if (coupon == null || coupon.getStatus() != 1 || coupon.getType() != 1
@@ -336,6 +348,7 @@ public class CouponService {
         couponMember.setMemberId(memberId);
         couponMember.setStatus(0);
         couponMember.setReceiveTime(now);
+        couponMember.setExchangeRequestId(requestId);
         couponMemberMapper.insert(couponMember);
     }
 

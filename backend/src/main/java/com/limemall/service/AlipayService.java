@@ -93,7 +93,7 @@ public class AlipayService {
         String enabledFlag = db.get(KEY_ENABLED);
         ChannelConfig channel = new ChannelConfig(appId, privateKey, publicKey, gatewayUrl);
         boolean keysReady = channel.hasKeys();
-        boolean enabled = keysReady && validNotifyUrl(notifyUrl)
+        boolean enabled = keysReady && validGatewayUrl(gatewayUrl) && validNotifyUrl(notifyUrl)
                 && (StringUtils.hasText(enabledFlag) ? "1".equals(enabledFlag.trim()) : true);
         String mode = db.keySet().stream().anyMatch(key -> key.startsWith("alipay."))
                 ? "db" : (keysReady ? "env" : "none");
@@ -132,12 +132,16 @@ public class AlipayService {
             throw new BusinessException("启用支付宝支付前，请填写公网可访问的异步通知地址");
         }
         ChannelConfig original = previous.channel();
+        String gatewayUrl = firstNonBlank(dto.getGatewayUrl(), original.gatewayUrl());
+        if ((enabled || StringUtils.hasText(dto.getGatewayUrl())) && !validGatewayUrl(gatewayUrl)) {
+            throw new BusinessException("支付宝网关须为完整的 HTTP 或 HTTPS 地址，且不能包含查询参数或片段");
+        }
         if (enabled) {
             ChannelConfig candidate = new ChannelConfig(
                     firstNonBlank(dto.getAppId(), original.appId()),
                     firstNonBlank(dto.getMerchantPrivateKey(), original.privateKey()),
                     firstNonBlank(dto.getAlipayPublicKey(), original.publicKey()),
-                    firstNonBlank(dto.getGatewayUrl(), original.gatewayUrl()));
+                    gatewayUrl);
             requireChannelKeys(candidate);
             parsePrivateKey(candidate.privateKey());
             parsePublicKey(candidate.publicKey());
@@ -197,6 +201,7 @@ public class AlipayService {
         }
         ChannelConfig channel = profileId == null ? config.channel()
                 : withLatestCredentials(requireProfile(profileId), config.channel());
+        requireGatewayUrl(channel);
         String bizContent = "{"
                 + "\"out_trade_no\":\"" + order.getOrderSn() + "\","
                 + "\"product_code\":\"FAST_INSTANT_TRADE_PAY\","
@@ -284,6 +289,28 @@ public class AlipayService {
             return objectMapper.readValue(payload, ChannelConfig.class);
         } catch (IOException e) {
             throw new BusinessException("订单对应的支付宝渠道配置无法读取");
+        }
+    }
+
+    private static boolean validGatewayUrl(String url) {
+        if (!StringUtils.hasText(url)) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(url.trim());
+            String scheme = uri.getScheme();
+            return ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))
+                    && uri.getHost() != null && uri.getRawUserInfo() == null
+                    && uri.getRawQuery() == null && uri.getRawFragment() == null
+                    && uri.getPort() != 0 && uri.getPort() <= 65535;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static void requireGatewayUrl(ChannelConfig channel) {
+        if (!validGatewayUrl(channel.gatewayUrl())) {
+            throw new BusinessException("支付宝网关地址无效，请检查渠道配置");
         }
     }
 
@@ -399,6 +426,7 @@ public class AlipayService {
     }
 
     private JsonNode gatewayCall(ChannelConfig channel, String method, JsonNode content) {
+        requireGatewayUrl(channel);
         try {
             TreeMap<String, String> params = requestParameters(channel, method, objectMapper.writeValueAsString(content));
             HttpRequest request = HttpRequest.newBuilder(URI.create(channel.gatewayUrl()))

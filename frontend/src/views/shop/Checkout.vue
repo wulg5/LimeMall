@@ -80,7 +80,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createOrder, getCheckoutResult, getMyCoupons, getOrderQuote } from '@/api/portal'
-import { newCartRevision, useCartStore } from '@/stores/cart'
+import { legacyCartLineId, newCartRevision, useCartStore } from '@/stores/cart'
 import { useShopStore } from '@/stores/shop'
 import { money } from '@/utils/format'
 
@@ -99,12 +99,17 @@ cartStore.syncFromStorage()
 const buyingNow = route.query.buyNow === '1'
 const buyNowItem = buyingNow ? cartStore.buyNowItem : null
 const selectedItems = buyingNow ? (buyNowItem ? [buyNowItem] : []) : cartStore.checkedItems
-const cartRevision = cartStore.revision
+const checkoutRevision = buyingNow ? buyNowItem?.lineId : cartStore.revision
 const items = selectedItems.map(item => ({ ...item }))
 const orderItems = items.map(({ skuId, quantity }) => ({ skuId, quantity }))
+const checkoutLines = items.map(({ skuId, lineId }) => ({ skuId, lineId }))
 const legacyKeyPrefix = `lime_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now:' : ''}`
 const retryKey = `lime_pending_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now' : 'cart'}`
-const sharedRetryKey = `lime_shared_checkout:${shopStore.info?.id}`
+const cartRetryKey = `lime_shared_checkout:${shopStore.info?.id}`
+const buyNowRetryKey = `lime_shared_buy_now:${shopStore.info?.id}`
+const sharedRetryKey = buyingNow ? buyNowRetryKey : cartRetryKey
+const alternateRetryKey = buyingNow ? cartRetryKey : buyNowRetryKey
+let localAttempt = null
 const legacyRequests = new Map()
 let checkoutRequestId = readCheckoutRequestId()
 const pendingConfirmation = ref(Boolean(checkoutRequestId))
@@ -180,38 +185,65 @@ function readCheckoutRequestId() {
   }
 }
 
-function readSharedCheckout() {
-  if (buyingNow) return null
+function readSharedCheckout(key = sharedRetryKey) {
   try {
-    const attempt = JSON.parse(localStorage.getItem(sharedRetryKey) || 'null')
+    const attempt = JSON.parse(localStorage.getItem(key) || 'null')
     return /^[0-9a-f]{32}$/.test(attempt?.id || '') ? attempt : null
   } catch {
     return null
   }
 }
 
-function writeSharedCheckout(attempt) {
+function writeSharedCheckout(key, attempt) {
   try {
-    localStorage.setItem(sharedRetryKey, JSON.stringify(attempt))
+    localStorage.setItem(key, JSON.stringify(attempt))
   } catch {
     // 当前标签页仍使用自己的结算请求号。
   }
 }
 
+function samePurchase(left, right) {
+  return left.length === right.length
+    && left.every(item => right.some(other => other.skuId === item.skuId && other.quantity === item.quantity))
+}
+
+function alternateCheckout() {
+  const attempt = readSharedCheckout(alternateRetryKey)
+  if (!attempt || attempt.completed || !orderItems.length) return null
+  if (!attempt.items) return attempt
+  const pendingItems = [attempt, ...(attempt.retries || [])].flatMap(entry => entry.items)
+  const overlaps = orderItems.some(item => pendingItems.some(other => other.skuId === item.skuId))
+  return overlaps ? attempt : null
+}
+
+function checkoutOrigin(requestId) {
+  for (const key of [sharedRetryKey, alternateRetryKey]) {
+    const attempt = readSharedCheckout(key)
+    if (attempt?.id === requestId) return { key, attempt }
+  }
+  return { key: sharedRetryKey, attempt: localAttempt?.id === requestId ? localAttempt : null }
+}
+
 function syncSharedCheckout() {
   const shared = readSharedCheckout()
-  if (shared && (!shared.completed || shared.revision === cartRevision || shared.id === checkoutRequestId)) {
+  if (shared && (!shared.completed || shared.revision === checkoutRevision || shared.id === checkoutRequestId)) {
     checkoutRequestId = shared.id
     pendingConfirmation.value = true
   }
 }
 
 function rememberCheckoutRequest() {
-  checkoutRequestId ||= (!buyingNow && cartRevision) || newCartRevision()
+  checkoutRequestId ||= (/^[0-9a-f]{32}$/.test(checkoutRevision || '') ? checkoutRevision : newCartRevision())
   const shared = readSharedCheckout()
-  if (!buyingNow && shared?.id !== checkoutRequestId) {
-    writeSharedCheckout({ id: checkoutRequestId, revision: cartRevision, completed: false })
+  const selection = { items: orderItems, lines: checkoutLines }
+  if (shared?.id === checkoutRequestId && shared.lines) {
+    const retries = shared.retries || []
+    localAttempt = [shared, ...retries].some(entry => samePurchase(entry.items, orderItems))
+      ? shared : { ...shared, retries: [...retries, selection] }
+  } else {
+    localAttempt = { id: checkoutRequestId, revision: checkoutRevision, completed: false, ...selection }
   }
+  writeSharedCheckout(sharedRetryKey, localAttempt)
   pendingConfirmation.value = true
   try {
     sessionStorage.setItem(retryKey, checkoutRequestId)
@@ -227,16 +259,20 @@ async function showPlacedOrder(order, recovered = false) {
   if (!requestId) return
   checkoutRequestId = null
   pendingConfirmation.value = false
-  if (buyingNow) {
-    if (buyNowItem && order.items.some(item => item.skuId === buyNowItem.skuId && item.quantity === buyNowItem.quantity)) {
-      cartStore.clearBuyNow(buyNowItem)
+  const { key, attempt } = checkoutOrigin(requestId)
+  const purchased = attempt?.items && [attempt, ...(attempt.retries || [])].find(entry => samePurchase(entry.items, order.items))
+  const lines = purchased?.lines ?? order.items.map(({ skuId }) => ({ skuId, lineId: legacyCartLineId(skuId) }))
+  if (key === buyNowRetryKey) {
+    const item = cartStore.buyNowItem
+    if (item && lines.some(line => line.skuId === item.skuId && line.lineId === item.lineId)) {
+      cartStore.clearBuyNow(item)
     }
   } else {
-    await cartStore.removePurchased(requestId, order.items)
-    const shared = readSharedCheckout()
-    if (shared?.id === requestId && !shared.completed) {
-      writeSharedCheckout({ ...shared, completed: true })
-    }
+    await cartStore.removePurchased(requestId, order.items, lines)
+  }
+  const shared = readSharedCheckout(key)
+  if (shared?.id === requestId && !shared.completed) {
+    writeSharedCheckout(key, { ...shared, completed: true })
   }
   try {
     if (sessionStorage.getItem(retryKey) === requestId) sessionStorage.removeItem(retryKey)
@@ -264,9 +300,11 @@ async function showPlacedOrder(order, recovered = false) {
 }
 
 async function recoverOrder() {
-  if (!pendingConfirmation.value) return false
-  const candidates = new Set([checkoutRequestId, ...legacyRequests.keys()])
+  const alternate = alternateCheckout()
+  if (!pendingConfirmation.value && !alternate) return false
+  const candidates = new Set([checkoutRequestId, ...legacyRequests.keys(), alternate?.id])
   for (const requestId of candidates) {
+    if (!requestId) continue
     const order = await getCheckoutResult(requestId)
     if (!order) continue
     checkoutRequestId = requestId
@@ -275,6 +313,19 @@ async function recoverOrder() {
   }
   pendingConfirmation.value = false
   return false
+}
+
+function discardRejectedCheckout() {
+  const rejectedId = checkoutRequestId
+  checkoutRequestId = null
+  localAttempt = null
+  try {
+    const shared = readSharedCheckout()
+    if (shared?.id === rejectedId && !shared.completed) localStorage.removeItem(sharedRetryKey)
+    if (sessionStorage.getItem(retryKey) === rejectedId) sessionStorage.removeItem(retryKey)
+  } catch {
+    // 浏览器禁用存储时，当前页仍可下一次提交。
+  }
 }
 
 async function refreshCheckout() {
@@ -306,9 +357,9 @@ async function handleSubmit() {
   if (!quote.value || quoting.value || submitting.value) return
   submitting.value = true
   try {
-    const locks = !buyingNow && globalThis.navigator?.locks
+    const locks = globalThis.navigator?.locks
     if (locks) {
-      await locks.request(sharedRetryKey, submitCheckout)
+      await locks.request(cartRetryKey, submitCheckout)
     } else {
       await submitCheckout()
     }
@@ -318,13 +369,18 @@ async function handleSubmit() {
 }
 
 async function submitCheckout() {
+  let posted = false
   try {
-    if (!mounted || route.fullPath !== checkoutPath) return
+    if (!mounted || route.fullPath !== checkoutPath || !shopStore.token) return
     syncSharedCheckout()
     if (await recoverOrder()) return
+    if (alternateCheckout()) {
+      ElMessage.warning('同一商品的上次下单尚未确认，请回原结算入口重试')
+      return
+    }
     if (!buyingNow) {
       cartStore.syncFromStorage()
-      if (cartStore.revision !== cartRevision) {
+      if (cartStore.revision !== checkoutRevision) {
         ElMessage.warning('购物车已更新，请重新结算')
         router.replace('/shop/cart')
         return
@@ -332,6 +388,7 @@ async function submitCheckout() {
     }
     await formRef.value.validate()
     rememberCheckoutRequest()
+    posted = true
     const order = await createOrder({
       checkoutRequestId,
       items: orderItems.map(item => ({
@@ -346,10 +403,11 @@ async function submitCheckout() {
       couponMemberId: couponMemberId.value || undefined
     })
     await showPlacedOrder(order)
-  } catch {
+  } catch (error) {
     if (!pendingConfirmation.value) return
     try {
       if (!await recoverOrder()) {
+        if (posted && error.businessRejected) discardRejectedCheckout()
         const selectedId = couponMemberId.value
         quote.value = null
         const [refreshed] = await Promise.all([loadQuote(selectedId), loadCoupons()])

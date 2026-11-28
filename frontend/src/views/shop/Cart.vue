@@ -24,7 +24,7 @@
           </div>
           <span class="col-price">{{ money(item.price) }}</span>
           <div class="col-qty">
-            <el-input-number :model-value="item.quantity" :min="1" :max="item.stock"
+            <el-input-number :model-value="item.quantity" :min="1" :max="item.stock" :precision="0" :value-on-clear="1"
                              size="small" @change="(value) => cartStore.updateQuantity(item.skuId, value)" />
           </div>
           <span class="col-subtotal subtotal">{{ money(item.price * item.quantity) }}</span>

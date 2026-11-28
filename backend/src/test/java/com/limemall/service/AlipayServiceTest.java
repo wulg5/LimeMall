@@ -282,6 +282,20 @@ class AlipayServiceTest {
         assertNotNull(service.checkPayment(pinned, false).paidAt());
     }
 
+    @Test
+    void rejectsInvalidGatewayWithoutReplacingWorkingConfiguration() {
+        useWritableSettings();
+        Map<String, String> original = settings.getAll();
+        PayConfigSaveDTO update = new PayConfigSaveDTO();
+        update.setEnabled(true);
+        update.setGatewayUrl("https://");
+
+        assertThrows(BusinessException.class, () -> service.saveConfig(update));
+        assertEquals(original, settings.getAll());
+        assertTrue(service.isEnabled());
+        assertNotNull(service.checkPayment(order(), false).paidAt());
+    }
+
     private void useWritableSettings() {
         Map<String, String> active = new HashMap<>(Map.of(AlipayService.KEY_ENABLED, "1",
                 AlipayService.KEY_NOTIFY_URL, "https://notify.example.test/notify"));

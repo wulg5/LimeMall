@@ -55,8 +55,9 @@ public class PortalCouponController {
 
     @PostMapping("/{id}/exchange")
     @Operation(summary = "积分兑换优惠券")
-    public Result<Void> exchange(@PathVariable Long id, @RequestParam(required = false) Integer expectedPoints) {
-        couponService.exchange(SecurityUtils.getMemberId(), id, expectedPoints);
+    public Result<Void> exchange(@PathVariable Long id, @RequestParam(required = false) Integer expectedPoints,
+                                 @RequestParam(required = false) String requestId) {
+        couponService.exchange(SecurityUtils.getMemberId(), id, expectedPoints, requestId);
         return Result.ok();
     }
 }

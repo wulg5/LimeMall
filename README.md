@@ -155,7 +155,7 @@ cloudflared tunnel --url http://127.0.0.1:18080
 
 退款处理中会按固定退款请求号向支付宝重试或查询。升级前已有的「历史审核通过」记录没有渠道确认凭据，需要单独对账。当前退款流程复用原表，无需重跑初始化 SQL。
 
-已有数据库升级本版本时，启动新后端前按顺序执行尚未应用的[结算与积分迁移](sql/migrations/2026-11-27-checkout-payment-points.sql)、[支付渠道迁移](sql/migrations/2026-11-27-order-payment-channel.sql)和[评价与客服迁移](sql/migrations/2026-11-27-comment-visibility-and-chat.sql)。迁移保留现有订单和积分数据。历史积分批次缺少可核实的原始金额时，积分明细显示 `—`，批次剩余仍照常显示。新建数据库使用 `sql/init.sql` 即可。
+已有数据库升级本版本时，启动新后端前按顺序执行尚未应用的[结算与积分迁移](sql/migrations/2026-11-27-checkout-payment-points.sql)、[支付渠道迁移](sql/migrations/2026-11-27-order-payment-channel.sql)和[评价与客服迁移](sql/migrations/2026-11-27-comment-visibility-and-chat.sql)，再执行[积分兑换与超管角色迁移](sql/migrations/2026-11-28-exchange-retry-and-super-role.sql)。迁移保留现有订单、优惠券领取记录和积分数据。历史积分批次缺少可核实的原始金额时，积分明细显示 `—`，批次剩余仍照常显示。新建数据库使用 `sql/init.sql` 即可。
 
 ## 安全设计
 

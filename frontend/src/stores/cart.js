@@ -8,12 +8,22 @@ export function newCartRevision() {
 const BUY_NOW_KEY = 'lime_buy_now'
 const CHECKOUT_HISTORY_LIMIT = 100
 
+export const legacyCartLineId = skuId => `legacy-${skuId}`
+
+function normalizeCartItem(item) {
+  return {
+    ...item,
+    lineId: item.lineId ?? legacyCartLineId(item.skuId),
+    quantity: Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 1
+  }
+}
+
 function readCart() {
   try {
     const value = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || '[]')
-    if (Array.isArray(value)) return { items: value, completedCheckouts: [], revision: null }
+    if (Array.isArray(value)) return { items: value.map(normalizeCartItem), completedCheckouts: [], revision: null }
     if (!Array.isArray(value?.items)) return null
-    return { items: value.items, completedCheckouts: value.completedCheckouts || [], revision: value.revision ?? null }
+    return { items: value.items.map(normalizeCartItem), completedCheckouts: value.completedCheckouts || [], revision: value.revision ?? null }
   } catch {
     return null
   }
@@ -21,7 +31,8 @@ function readCart() {
 
 function loadBuyNowItem() {
   try {
-    return JSON.parse(sessionStorage.getItem(BUY_NOW_KEY) || 'null')
+    const item = JSON.parse(sessionStorage.getItem(BUY_NOW_KEY) || 'null')
+    return item ? normalizeCartItem(item) : null
   } catch {
     return null
   }
@@ -74,15 +85,15 @@ export const useCartStore = defineStore('cart', {
         const existing = this.items.find((it) => it.skuId === item.skuId)
         if (existing) {
           const quantity = Math.min(existing.quantity + item.quantity, item.stock ?? 999)
-          Object.assign(existing, item, { quantity, checked: true })
+          Object.assign(existing, item, { lineId: existing.lineId, quantity, checked: true })
         } else {
-          this.items.push({ ...item, checked: true })
+          this.items.push({ ...item, lineId: newCartRevision(), checked: true })
         }
       })
     },
 
     setBuyNow(item) {
-      this.buyNowItem = { ...item }
+      this.buyNowItem = { ...item, lineId: newCartRevision() }
       try {
         sessionStorage.setItem(BUY_NOW_KEY, JSON.stringify(this.buyNowItem))
       } catch {
@@ -101,6 +112,7 @@ export const useCartStore = defineStore('cart', {
     },
 
     updateQuantity(skuId, quantity) {
+      if (!Number.isInteger(quantity) || quantity < 1) return
       return this.updateCart(() => {
         const item = this.items.find((it) => it.skuId === skuId)
         if (item) item.quantity = quantity
@@ -126,13 +138,14 @@ export const useCartStore = defineStore('cart', {
       })
     },
 
-    removePurchased(requestId, items) {
+    removePurchased(requestId, items, checkoutLines) {
       return this.updateCart(() => {
         if (this.completedCheckouts.includes(requestId)) return
         this.completedCheckouts = [...this.completedCheckouts, requestId].slice(-CHECKOUT_HISTORY_LIMIT)
         const quantities = new Map(items.map(({ skuId, quantity }) => [skuId, quantity]))
+        const lines = new Map(checkoutLines.map(({ skuId, lineId }) => [skuId, lineId]))
         this.items = this.items.filter(item => {
-          if (!quantities.has(item.skuId)) return true
+          if (!quantities.has(item.skuId) || lines.get(item.skuId) !== item.lineId) return true
           const remaining = item.quantity - quantities.get(item.skuId)
           if (remaining <= 0) return false
           item.quantity = remaining

@@ -172,10 +172,12 @@ onMounted(async () => {
     }
   })
   pollTimer = setInterval(refresh, 15000)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
 })
 
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
   disconnectChatSocket()
 })
 
@@ -189,7 +191,12 @@ async function refreshLists() {
   }
 }
 
+function refreshWhenVisible() {
+  if (!document.hidden) refresh().catch(() => {})
+}
+
 async function refresh() {
+  if (document.hidden) return
   await refreshLists()
   if (active.value) {
     await loadMessages()
@@ -218,7 +225,7 @@ function openSession(session) {
 
 async function loadMessages() {
   const sessionId = active.value?.id
-  if (!sessionId) return
+  if (!sessionId || document.hidden) return
   const request = ++latestMessageRequest
   const [current, received] = await Promise.all([chatSessionDetail(sessionId), chatSessionMessages(sessionId)])
   if (request !== latestMessageRequest || active.value?.id !== sessionId) return
@@ -238,7 +245,7 @@ async function loadMessages() {
 async function loadOlderMessages() {
   const sessionId = active.value?.id
   const beforeId = messages.value[0]?.id
-  if (!sessionId || !beforeId || loadingOlder.value || !hasOlder.value) return
+  if (document.hidden || !sessionId || !beforeId || loadingOlder.value || !hasOlder.value) return
   loadingOlder.value = true
   try {
     const received = await chatSessionMessages(sessionId, beforeId)
