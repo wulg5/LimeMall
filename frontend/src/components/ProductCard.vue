@@ -30,6 +30,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ShoppingCart } from '@element-plus/icons-vue'
 import { getProductDetail } from '@/api/portal'
@@ -41,40 +42,50 @@ const props = defineProps({
 })
 
 const cartStore = useCartStore()
+const router = useRouter()
 const adding = ref(false)
 
 const discount = computed(() => {
   const original = Number(props.product.originalPrice || 0)
-  const price = Number(props.product.price || 0)
+  const price = currentPrice.value
   return original > price ? (original - price).toFixed(0) : 0
 })
 
-/** 当前展示价：秒杀进行中优先展示秒杀价，原价展示常规售价 */
+/** 展示及快捷加购都以有货规格的最低当前价为准。 */
 const currentPrice = computed(() =>
-  Number(props.product.flashPrice || props.product.price || 0)
+  Number(props.product.displayPrice ?? props.product.flashPrice ?? props.product.price ?? 0)
 )
 
 const origPrice = computed(() =>
-  Number(props.product.flashPrice ? props.product.price : props.product.originalPrice || 0)
+  Number((props.product.flashPrice ? props.product.flashOriginalPrice : props.product.originalPrice) ?? 0)
 )
 
-/** 快捷加购：取第一个有库存的 SKU 加入购物车 */
+const skuPrice = (sku) => Number(sku.flashPrice ?? sku.price)
+
+/** 同价时优先选择参加秒杀的规格，其次按 SKU ID。 */
 async function quickAdd() {
   adding.value = true
   try {
     const detail = await getProductDetail(props.product.id)
-    const sku = (detail.skus || []).find((item) => item.stock > 0)
+    const [sku] = (detail.skus || []).filter(item => item.stock > 0).sort((a, b) =>
+      skuPrice(a) - skuPrice(b) || Number(!a.flashPrice) - Number(!b.flashPrice) || a.id - b.id
+    )
     if (!sku) {
       ElMessage.warning('该商品暂时缺货')
       return
     }
-    cartStore.add({
+    if (skuPrice(sku) !== currentPrice.value) {
+      ElMessage.warning('商品价格已变化，请在详情页确认规格和价格')
+      await router.push({ path: `/shop/product/${detail.id}`, query: { skuId: String(sku.id) } })
+      return
+    }
+    await cartStore.add({
       skuId: sku.id,
       productId: detail.id,
       name: detail.name,
       pic: sku.pic || detail.mainPic,
       specs: specsToText(sku.specs),
-      price: Number(sku.flashPrice || sku.price),
+      price: skuPrice(sku),
       stock: sku.stock,
       quantity: 1
     })

@@ -198,7 +198,7 @@ function selectSku(sku) {
   quantity.value = 1
 }
 
-function addToCart(buyNow) {
+async function addToCart(buyNow) {
   if (!selectedSku.value) {
     ElMessage.warning('请选择商品规格')
     return
@@ -218,7 +218,7 @@ function addToCart(buyNow) {
     router.push({ path: '/shop/checkout', query: { buyNow: '1' } })
     return
   }
-  cartStore.add(item)
+  await cartStore.add(item)
   ElMessage.success('已加入购物车')
 }
 </script>

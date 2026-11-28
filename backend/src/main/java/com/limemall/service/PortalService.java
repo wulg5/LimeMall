@@ -1,6 +1,7 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.limemall.common.BusinessException;
 import com.limemall.entity.PmsBrand;
 import com.limemall.entity.PmsCategory;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -38,14 +40,17 @@ public class PortalService {
         PortalHomeVO vo = new PortalHomeVO();
         vo.setCategories(categoryService.tree());
 
-        List<PmsProduct> hot = productMapper.selectList(new LambdaQueryWrapper<PmsProduct>()
-                .eq(PmsProduct::getPublishStatus, 1)
-                .orderByDesc(PmsProduct::getSales)
-                .last("LIMIT 8"));
-        List<PmsProduct> newest = productMapper.selectList(new LambdaQueryWrapper<PmsProduct>()
-                .eq(PmsProduct::getPublishStatus, 1)
-                .orderByDesc(PmsProduct::getId)
-                .last("LIMIT 8"));
+        LocalDateTime now = LocalDateTime.now();
+        List<PmsProduct> hot = productMapper.selectPageByDisplayPrice(new Page<>(1, 8, false),
+                new LambdaQueryWrapper<PmsProduct>()
+                        .eq(PmsProduct::getPublishStatus, 1)
+                        .eq(PmsProduct::getDeleteStatus, 0)
+                        .orderByDesc(PmsProduct::getSales, PmsProduct::getId), null, now).getRecords();
+        List<PmsProduct> newest = productMapper.selectPageByDisplayPrice(new Page<>(1, 8, false),
+                new LambdaQueryWrapper<PmsProduct>()
+                        .eq(PmsProduct::getPublishStatus, 1)
+                        .eq(PmsProduct::getDeleteStatus, 0)
+                        .orderByDesc(PmsProduct::getId), null, now).getRecords();
 
         Map<Long, String> categoryNames = categoryMapper.selectList(null).stream()
                 .collect(Collectors.toMap(PmsCategory::getId, PmsCategory::getName));

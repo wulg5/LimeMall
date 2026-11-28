@@ -150,12 +150,10 @@ public class AdminService {
         existing.setPhone(dto.getPhone());
         existing.setStatus(dto.getStatus());
         adminMapper.updateById(existing);
-        if (Integer.valueOf(0).equals(existing.getStatus())) {
-            chatSessionMapper.releaseOpenSessions(existing.getId());
-        }
         adminRoleMapper.delete(new LambdaQueryWrapper<UmsAdminRole>()
                 .eq(UmsAdminRole::getAdminId, dto.getId()));
         saveRoles(dto.getId(), dto.getRoleIds());
+        chatSessionMapper.releaseIneligibleSessions(dto.getId());
     }
 
     /**

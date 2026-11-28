@@ -15,7 +15,6 @@ import com.limemall.vo.FlashSaleVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -124,24 +123,6 @@ public class FlashSaleService {
         }
         return flashSaleMapper.selectActiveDiscounts(LocalDateTime.now(), skuIds)
                 .stream().collect(Collectors.toMap(SmsFlashSale::getSkuId, Function.identity()));
-    }
-
-    /** 商品 → 生效秒杀最低价（列表页展示） */
-    public Map<Long, BigDecimal> activeMinPriceByProduct() {
-        List<SmsFlashSale> flashes = activeFlashes();
-        if (flashes.isEmpty()) {
-            return Map.of();
-        }
-        Map<Long, PmsSku> skuMap = skuMapper.selectBatchIds(
-                        flashes.stream().map(SmsFlashSale::getSkuId).toList())
-                .stream().collect(Collectors.toMap(PmsSku::getId, Function.identity()));
-        return flashes.stream()
-                .filter(flash -> skuMap.containsKey(flash.getSkuId()))
-                .collect(Collectors.groupingBy(
-                        flash -> skuMap.get(flash.getSkuId()).getProductId(),
-                        Collectors.collectingAndThen(
-                                Collectors.minBy((a, b) -> a.getFlashPrice().compareTo(b.getFlashPrice())),
-                                optional -> optional.map(SmsFlashSale::getFlashPrice).orElse(null))));
     }
 
     private List<SmsFlashSale> activeFlashes() {

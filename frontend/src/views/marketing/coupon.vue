@@ -111,10 +111,11 @@
         <el-form-item label="每人限领" prop="perLimit">
           <el-input-number v-model="form.perLimit" :min="1" style="width: 180px" />
         </el-form-item>
-        <el-form-item label="积分兑换价">
-          <el-input-number v-model="form.pointsPrice" :min="0" :step="100" style="width: 180px" />
-          <span class="form-tip">0 表示免费领取。大于 0 时仅限积分兑换</span>
+        <el-form-item v-if="form.type === 1" label="积分兑换">
+          <el-switch v-model="form.exchangeEnabled" />
+          <span class="form-tip">{{ form.exchangeEnabled ? `${Math.round((form.amount || 0) * 100)} 积分兑换` : '免费领取' }}</span>
         </el-form-item>
+        <el-form-item v-else label="领取方式">免费领取</el-form-item>
         <el-form-item label="有效期" prop="timeRange">
           <el-date-picker v-model="form.timeRange" type="datetimerange" range-separator="至"
                           start-placeholder="开始时间" end-placeholder="结束时间"
@@ -176,7 +177,7 @@ const form = reactive({
   minAmount: 0,
   totalCount: 100,
   perLimit: 1,
-  pointsPrice: 0,
+  exchangeEnabled: false,
   timeRange: []
 })
 
@@ -237,7 +238,7 @@ function openDialog(row) {
         minAmount: Number(row.minAmount),
         totalCount: row.totalCount,
         perLimit: row.perLimit,
-        pointsPrice: row.pointsPrice || 0,
+        exchangeEnabled: row.type === 1 && row.pointsPrice > 0,
         timeRange: [row.startTime, row.endTime]
       }
     : {
@@ -248,7 +249,7 @@ function openDialog(row) {
         minAmount: 0,
         totalCount: 100,
         perLimit: 1,
-        pointsPrice: 0,
+        exchangeEnabled: false,
         timeRange: []
       })
   dialogVisible.value = true
@@ -266,7 +267,7 @@ async function handleSave() {
       minAmount: form.minAmount,
       totalCount: form.totalCount,
       perLimit: form.perLimit,
-      pointsPrice: form.pointsPrice || 0,
+      pointsPrice: form.type === 1 && form.exchangeEnabled ? 1 : 0,
       startTime: form.timeRange[0],
       endTime: form.timeRange[1]
     }

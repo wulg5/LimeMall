@@ -95,13 +95,15 @@ const checkoutPath = route.fullPath
 let mounted = true
 onBeforeUnmount(() => { mounted = false })
 
+cartStore.syncFromStorage()
 const buyingNow = route.query.buyNow === '1'
 const buyNowItem = buyingNow ? cartStore.buyNowItem : null
 const selectedItems = buyingNow ? (buyNowItem ? [buyNowItem] : []) : cartStore.checkedItems
 const items = selectedItems.map(item => ({ ...item }))
 const orderItems = items.map(({ skuId, quantity }) => ({ skuId, quantity }))
-const cartSignature = orderItems.map(({ skuId, quantity }) => `${skuId}:${quantity}`).sort().join(',')
-const retryKey = `lime_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now:' : ''}${cartSignature}`
+const legacyKeyPrefix = `lime_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now:' : ''}`
+const retryKey = `lime_pending_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now' : 'cart'}`
+const legacyRequests = new Map()
 let checkoutRequestId = readCheckoutRequestId()
 const pendingConfirmation = ref(Boolean(checkoutRequestId))
 const quote = ref(null)
@@ -161,7 +163,16 @@ async function loadCoupons() {
 function readCheckoutRequestId() {
   try {
     const storedRequestId = sessionStorage.getItem(retryKey)
-    return /^[0-9a-f]{32}$/.test(storedRequestId || '') ? storedRequestId : null
+    for (let index = 0; index < sessionStorage.length; index++) {
+      const key = sessionStorage.key(index)
+      if (!key?.startsWith(legacyKeyPrefix)) continue
+      if (!/^\d+:\d+(,\d+:\d+)*$/.test(key.slice(legacyKeyPrefix.length))) continue
+      const legacyId = sessionStorage.getItem(key)
+      if (!/^[0-9a-f]{32}$/.test(legacyId || '')) continue
+      legacyRequests.set(legacyId, key)
+    }
+    return /^[0-9a-f]{32}$/.test(storedRequestId || '')
+      ? storedRequestId : legacyRequests.keys().next().value ?? null
   } catch {
     return null
   }
@@ -173,25 +184,33 @@ function rememberCheckoutRequest() {
   pendingConfirmation.value = true
   try {
     sessionStorage.setItem(retryKey, checkoutRequestId)
+    const legacyRetryKey = legacyRequests.get(checkoutRequestId)
+    if (legacyRetryKey) sessionStorage.removeItem(legacyRetryKey)
   } catch {
     // 当前页面仍保留请求号，可继续重试。
   }
 }
 
-async function showPlacedOrder(order) {
+async function showPlacedOrder(order, recovered = false) {
   const requestId = checkoutRequestId
   if (!requestId) return
   checkoutRequestId = null
   pendingConfirmation.value = false
+  if (buyingNow) {
+    if (buyNowItem && order.items.some(item => item.skuId === buyNowItem.skuId && item.quantity === buyNowItem.quantity)) {
+      cartStore.clearBuyNow(buyNowItem)
+    }
+  } else {
+    await cartStore.removePurchased(requestId, order.items)
+  }
   try {
     if (sessionStorage.getItem(retryKey) === requestId) sessionStorage.removeItem(retryKey)
+    const legacyRetryKey = legacyRequests.get(requestId)
+    if (legacyRetryKey && sessionStorage.getItem(legacyRetryKey) === requestId) {
+      sessionStorage.removeItem(legacyRetryKey)
+    }
   } catch {
     // 浏览器禁用存储时，请求号仅保存在当前页面。
-  }
-  if (buyingNow) {
-    cartStore.clearBuyNow(buyNowItem)
-  } else {
-    cartStore.removePurchased(requestId, orderItems)
   }
   if (!mounted || route.fullPath !== checkoutPath) return
   const requiresPayment = order.status === 0
@@ -201,7 +220,7 @@ async function showPlacedOrder(order) {
     : order.status === 4
       ? `${orderNumber}，该订单已关闭。`
       : `${orderNumber}，请在订单列表查看当前状态。`
-  await ElMessageBox.alert(message, '订单已生成', {
+  await ElMessageBox.alert(message, recovered ? '已找回原订单' : '订单已生成', {
     type: 'success',
     confirmButtonText: requiresPayment ? '查看订单并支付' : '查看订单'
   }).catch(() => {})
@@ -210,19 +229,22 @@ async function showPlacedOrder(order) {
 
 async function recoverOrder() {
   if (!pendingConfirmation.value) return false
-  const order = await getCheckoutResult(checkoutRequestId)
-  if (!order) {
-    pendingConfirmation.value = false
-    return false
+  const candidates = new Set([checkoutRequestId, ...legacyRequests.keys()])
+  for (const requestId of candidates) {
+    const order = await getCheckoutResult(requestId)
+    if (!order) continue
+    checkoutRequestId = requestId
+    await showPlacedOrder(order, true)
+    return true
   }
-  await showPlacedOrder(order)
-  return true
+  pendingConfirmation.value = false
+  return false
 }
 
 async function refreshCheckout() {
   quoting.value = true
   try {
-    if (!await recoverOrder()) {
+    if (!await recoverOrder() && items.length) {
       await Promise.all([loadQuote(null), loadCoupons()])
     }
   } catch {
@@ -233,12 +255,13 @@ async function refreshCheckout() {
 }
 
 onMounted(async () => {
-  if (!items.length) {
+  if (!items.length && !pendingConfirmation.value) {
     ElMessage.warning(buyingNow ? '请从商品详情重新发起立即购买' : '请先在购物车勾选要结算的商品')
     router.replace('/shop/cart')
     return
   }
   await refreshCheckout()
+  if (!items.length && !pendingConfirmation.value && checkoutRequestId) router.replace('/shop/cart')
 })
 
 async function handleSubmit() {

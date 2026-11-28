@@ -125,9 +125,9 @@ public class ChatService {
         Map<Long, UmsMember> memberMap = memberMapper.selectBatchIds(
                         records.stream().map(UmsChatSession::getMemberId).distinct().toList())
                 .stream().collect(Collectors.toMap(UmsMember::getId, Function.identity()));
-        Map<Long, UmsAdmin> agentMap = adminMapper.selectBatchIds(
-                        records.stream().map(UmsChatSession::getAgentId)
-                                .filter(java.util.Objects::nonNull).distinct().toList())
+        List<Long> agentIds = records.stream().map(UmsChatSession::getAgentId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, UmsAdmin> agentMap = agentIds.isEmpty() ? Map.of() : adminMapper.selectBatchIds(agentIds)
                 .stream().collect(Collectors.toMap(UmsAdmin::getId, Function.identity()));
         Map<Long, UmsChatMessage> lastMessageMap = messageMapper.selectList(
                         new LambdaQueryWrapper<UmsChatMessage>()
@@ -175,7 +175,7 @@ public class ChatService {
         return lastMessages(sessionId);
     }
 
-    /** 接入会话：CAS 抢占（agent_id 为空 → 我），防止多个客服同时接待 */
+    /** 接入尚无有效客服的会话，防止多个客服同时接待。 */
     @Transactional
     public void claim(Long adminId, Long sessionId) {
         if (adminMapper.lockActiveById(adminId) == null) {
@@ -185,12 +185,7 @@ public class ChatService {
         if (session.getStatus() != SESSION_OPEN) {
             throw new BusinessException("会话已结束，无法接入");
         }
-        int affected = sessionMapper.update(null, new LambdaUpdateWrapper<UmsChatSession>()
-                .set(UmsChatSession::getAgentId, adminId)
-                .set(UmsChatSession::getAssignTime, LocalDateTime.now())
-                .eq(UmsChatSession::getId, sessionId)
-                .isNull(UmsChatSession::getAgentId)
-                .eq(UmsChatSession::getStatus, SESSION_OPEN));
+        int affected = sessionMapper.claimAvailable(sessionId, adminId, LocalDateTime.now());
         if (affected == 0) {
             throw new BusinessException("该会话已被其他客服接入");
         }
@@ -316,14 +311,18 @@ public class ChatService {
                 vo.setMemberLevel(member.getLevel());
                 vo.setMemberUserNo(member.getUserNo());
         }
-        vo.setAgentId(session.getAgentId());
-        if (session.getAgentId() != null) {
-            UmsAdmin agent = adminMapper.selectById(session.getAgentId());
+        Long agentId = session.getAgentId();
+        if (agentId != null && session.getStatus() == SESSION_OPEN) {
+            agentId = sessionMapper.selectEligibleAgentId(session.getId(), agentId);
+        }
+        vo.setAgentId(agentId);
+        if (agentId != null) {
+            UmsAdmin agent = adminMapper.selectById(agentId);
             vo.setAgentNickname(agent == null ? null : agent.getNickname());
         }
         vo.setStatus(session.getStatus());
         vo.setCreateTime(session.getCreateTime());
-        vo.setAssignTime(session.getAssignTime());
+        vo.setAssignTime(agentId == null ? null : session.getAssignTime());
         vo.setEndTime(session.getEndTime());
         return vo;
     }

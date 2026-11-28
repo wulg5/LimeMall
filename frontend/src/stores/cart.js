@@ -1,14 +1,17 @@
 import { defineStore } from 'pinia'
 
-const STORAGE_KEY = 'lime_cart'
+export const CART_STORAGE_KEY = 'lime_cart'
 const BUY_NOW_KEY = 'lime_buy_now'
-const completedCartCheckouts = new Set()
+const CHECKOUT_HISTORY_LIMIT = 100
 
-function loadCart() {
+function readCart() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch (e) {
-    return []
+    const value = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || '[]')
+    if (Array.isArray(value)) return { items: value, completedCheckouts: [] }
+    if (!Array.isArray(value?.items)) return null
+    return { items: value.items, completedCheckouts: value.completedCheckouts || [] }
+  } catch {
+    return null
   }
 }
 
@@ -20,44 +23,55 @@ function loadBuyNowItem() {
   }
 }
 
-/**
- * 购物车 Store（localStorage 持久化）。
- * 购物车属于前端态设计：由前端维护，结算时才与后端库存校验，符合 B2C 电商常见做法。
- */
 export const useCartStore = defineStore('cart', {
   state: () => ({
-    items: loadCart(),
-    buyNowItem: loadBuyNowItem()
+    ...(readCart() || { items: [], completedCheckouts: [] }),
+    buyNowItem: loadBuyNowItem(),
+    useStoredCart: true
   }),
 
   getters: {
-    /** 购物车商品总件数 */
     totalCount: (state) => state.items.reduce((sum, item) => sum + item.quantity, 0),
-    /** 已勾选商品 */
     checkedItems: (state) => state.items.filter((item) => item.checked),
-    /** 已勾选金额 */
     checkedAmount() {
       return this.checkedItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
     }
   },
 
   actions: {
-    persist() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+    syncFromStorage() {
+      if (!this.useStoredCart) return
+      const stored = readCart()
+      if (stored) this.$patch(stored)
     },
 
-    /**
-     * 加入购物车；同 SKU 累加数量，最多不超过库存。
-     */
-    add(item) {
-      const existing = this.items.find((it) => it.skuId === item.skuId)
-      if (existing) {
-        const quantity = Math.min(existing.quantity + item.quantity, item.stock ?? 999)
-        Object.assign(existing, item, { quantity, checked: true })
-      } else {
-        this.items.push({ ...item, checked: true })
+    updateCart(change) {
+      const update = () => {
+        this.syncFromStorage()
+        change()
+        try {
+          localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({
+            items: this.items,
+            completedCheckouts: this.completedCheckouts
+          }))
+        } catch {
+          this.useStoredCart = false
+        }
       }
-      this.persist()
+      const locks = globalThis.navigator?.locks
+      return locks ? locks.request(CART_STORAGE_KEY, update) : update()
+    },
+
+    add(item) {
+      return this.updateCart(() => {
+        const existing = this.items.find((it) => it.skuId === item.skuId)
+        if (existing) {
+          const quantity = Math.min(existing.quantity + item.quantity, item.stock ?? 999)
+          Object.assign(existing, item, { quantity, checked: true })
+        } else {
+          this.items.push({ ...item, checked: true })
+        }
+      })
     },
 
     setBuyNow(item) {
@@ -80,47 +94,44 @@ export const useCartStore = defineStore('cart', {
     },
 
     updateQuantity(skuId, quantity) {
-      const item = this.items.find((it) => it.skuId === skuId)
-      if (item) {
-        item.quantity = quantity
-        this.persist()
-      }
+      return this.updateCart(() => {
+        const item = this.items.find((it) => it.skuId === skuId)
+        if (item) item.quantity = quantity
+      })
     },
 
     toggle(skuId, checked) {
-      const item = this.items.find((it) => it.skuId === skuId)
-      if (item) {
-        item.checked = checked
-        this.persist()
-      }
+      return this.updateCart(() => {
+        const item = this.items.find((it) => it.skuId === skuId)
+        if (item) item.checked = checked
+      })
     },
 
     toggleAll(checked) {
-      this.items.forEach((it) => { it.checked = checked })
-      this.persist()
+      return this.updateCart(() => {
+        this.items.forEach((item) => { item.checked = checked })
+      })
     },
 
     remove(skuId) {
-      this.items = this.items.filter((it) => it.skuId !== skuId)
-      this.persist()
+      return this.updateCart(() => {
+        this.items = this.items.filter((it) => it.skuId !== skuId)
+      })
     },
 
     removePurchased(requestId, items) {
-      if (completedCartCheckouts.has(requestId)) return
-      completedCartCheckouts.add(requestId)
-      const quantities = new Map(items.map(({ skuId, quantity }) => [skuId, quantity]))
-      this.items = this.items.filter(item => {
-        if (!quantities.has(item.skuId)) return true
-        const remaining = item.quantity - quantities.get(item.skuId)
-        if (remaining <= 0) return false
-        item.quantity = remaining
-        return true
+      return this.updateCart(() => {
+        if (this.completedCheckouts.includes(requestId)) return
+        this.completedCheckouts = [...this.completedCheckouts, requestId].slice(-CHECKOUT_HISTORY_LIMIT)
+        const quantities = new Map(items.map(({ skuId, quantity }) => [skuId, quantity]))
+        this.items = this.items.filter(item => {
+          if (!quantities.has(item.skuId)) return true
+          const remaining = item.quantity - quantities.get(item.skuId)
+          if (remaining <= 0) return false
+          item.quantity = remaining
+          return true
+        })
       })
-      try {
-        this.persist()
-      } catch {
-        // 下单已成功，当前页面仍使用更新后的购物车。
-      }
     }
   }
 })

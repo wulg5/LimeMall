@@ -78,7 +78,7 @@ function handleToggleAll(value) {
 async function handleRemove(item) {
   try {
     await ElMessageBox.confirm(`确定从购物车移除「${item.name}」吗？`, '提示', { type: 'warning' })
-    cartStore.remove(item.skuId)
+    await cartStore.remove(item.skuId)
   } catch (e) {
     /* 取消 */
   }

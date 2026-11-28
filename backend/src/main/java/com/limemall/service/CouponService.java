@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CouponService {
 
+    private static final BigDecimal MAX_EXCHANGE_AMOUNT = BigDecimal.valueOf(Integer.MAX_VALUE, 2);
+
     private final SmsCouponMapper couponMapper;
     private final SmsCouponMemberMapper couponMemberMapper;
     private final UmsMemberMapper memberMapper;
@@ -46,6 +49,13 @@ public class CouponService {
                 .eq(status != null, SmsCoupon::getStatus, status)
                 .orderByDesc(SmsCoupon::getId);
         Page<SmsCoupon> page = couponMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        for (SmsCoupon coupon : page.getRecords()) {
+            if (coupon.getType() == 2) {
+                coupon.setPointsPrice(0);
+            } else if (coupon.getPointsPrice() > 0 && coupon.getAmount().compareTo(MAX_EXCHANGE_AMOUNT) <= 0) {
+                coupon.setPointsPrice(exchangeCost(coupon.getAmount()));
+            }
+        }
         return PageResult.of(page);
     }
 
@@ -144,7 +154,7 @@ public class CouponService {
                 .eq(SmsCoupon::getStatus, 1)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
-                .eq(SmsCoupon::getPointsPrice, 0)
+                .and(w -> w.eq(SmsCoupon::getType, 2).or().eq(SmsCoupon::getPointsPrice, 0))
                 .apply("receive_count < total_count")
                 .orderByDesc(SmsCoupon::getId));
         Map<Long, Long> myReceived = couponMemberMapper.selectList(
@@ -180,7 +190,7 @@ public class CouponService {
         if (coupon == null || coupon.getStatus() != 1) {
             throw new BusinessException("优惠券不存在或已停止发放");
         }
-        if (coupon.getPointsPrice() > 0) {
+        if (coupon.getType() == 1 && coupon.getPointsPrice() > 0) {
             throw new BusinessException("该优惠券仅限积分兑换");
         }
         if (now.isBefore(coupon.getStartTime()) || now.isAfter(coupon.getEndTime())) {
@@ -195,7 +205,7 @@ public class CouponService {
         int affected = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)
-                .eq(SmsCoupon::getPointsPrice, 0)
+                .and(w -> w.eq(SmsCoupon::getType, 2).or().eq(SmsCoupon::getPointsPrice, 0))
                 .eq(SmsCoupon::getStatus, 1)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
@@ -249,18 +259,18 @@ public class CouponService {
         }).filter(vo -> vo != null).toList();
     }
 
-    /**
-     * 积分商城：可兑换优惠券列表（仅限 status=1 且在有效期内、设置了积分价的券）。
-     */
+    /** 积分商城只列出已开启积分兑换的有效满减券。 */
     public List<PortalCouponVO> exchangeList() {
         LocalDateTime now = LocalDateTime.now();
         List<SmsCoupon> coupons = couponMapper.selectList(new LambdaQueryWrapper<SmsCoupon>()
                 .eq(SmsCoupon::getStatus, 1)
                 .gt(SmsCoupon::getPointsPrice, 0)
+                .eq(SmsCoupon::getType, 1)
+                .le(SmsCoupon::getAmount, MAX_EXCHANGE_AMOUNT)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
                 .apply("receive_count < total_count")
-                .orderByAsc(SmsCoupon::getPointsPrice, SmsCoupon::getId));
+                .orderByAsc(SmsCoupon::getAmount, SmsCoupon::getId));
         return coupons.stream().map(coupon -> {
             PortalCouponVO vo = new PortalCouponVO();
             vo.setId(coupon.getId());
@@ -271,7 +281,7 @@ public class CouponService {
             vo.setStartTime(coupon.getStartTime());
             vo.setEndTime(coupon.getEndTime());
             vo.setRemaining(coupon.getTotalCount() - coupon.getReceiveCount());
-            vo.setPointsPrice(coupon.getPointsPrice());
+            vo.setPointsPrice(exchangeCost(coupon.getAmount()));
             vo.setReceived(false);
             return vo;
         }).toList();
@@ -290,8 +300,8 @@ public class CouponService {
         UmsMember member = memberMapper.lockById(memberId);
         SmsCoupon coupon = couponMapper.selectById(couponId);
         LocalDateTime now = LocalDateTime.now();
-        if (coupon == null || coupon.getStatus() != 1
-                || coupon.getPointsPrice() == null || coupon.getPointsPrice() <= 0) {
+        if (coupon == null || coupon.getStatus() != 1 || coupon.getType() != 1
+                || coupon.getPointsPrice() <= 0) {
             throw new BusinessException("该优惠券不支持积分兑换");
         }
         if (now.isBefore(coupon.getStartTime()) || now.isAfter(coupon.getEndTime())) {
@@ -303,11 +313,13 @@ public class CouponService {
         if (myCount >= coupon.getPerLimit()) {
             throw new BusinessException("已达到该券兑换上限");
         }
-        pointsLedgerService.deduct(member, coupon.getPointsPrice(), "积分兑换：" + coupon.getName(), now);
+        pointsLedgerService.deduct(member, exchangeCost(coupon.getAmount()), "积分兑换：" + coupon.getName(), now);
         int stock = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)
-                .eq(SmsCoupon::getPointsPrice, coupon.getPointsPrice())
+                .eq(SmsCoupon::getType, 1)
+                .eq(SmsCoupon::getAmount, coupon.getAmount())
+                .gt(SmsCoupon::getPointsPrice, 0)
                 .eq(SmsCoupon::getStatus, 1)
                 .le(SmsCoupon::getStartTime, now)
                 .ge(SmsCoupon::getEndTime, now)
@@ -336,8 +348,16 @@ public class CouponService {
         if (dto.getEndTime().isBefore(dto.getStartTime())) {
             throw new BusinessException("结束时间不能早于开始时间");
         }
-        if (dto.getType() == 2 && dto.getAmount().compareTo(java.math.BigDecimal.TEN) >= 0) {
+        if (dto.getType() == 2 && dto.getAmount().compareTo(BigDecimal.TEN) >= 0) {
             throw new BusinessException("折扣券折扣值应小于 10（如 9.5 表示 95 折）");
+        }
+    }
+
+    private static int exchangeCost(BigDecimal amount) {
+        try {
+            return amount.movePointRight(2).intValueExact();
+        } catch (ArithmeticException e) {
+            throw new BusinessException("积分兑换券面额超出范围或小数位超过两位");
         }
     }
 
@@ -350,6 +370,7 @@ public class CouponService {
         coupon.setPerLimit(dto.getPerLimit());
         coupon.setStartTime(dto.getStartTime());
         coupon.setEndTime(dto.getEndTime());
-        coupon.setPointsPrice(dto.getPointsPrice() == null ? 0 : dto.getPointsPrice());
+        boolean exchangeEnabled = dto.getType() == 1 && dto.getPointsPrice() != null && dto.getPointsPrice() > 0;
+        coupon.setPointsPrice(exchangeEnabled ? exchangeCost(dto.getAmount()) : 0);
     }
 }

@@ -48,8 +48,12 @@ public class ProductVO {
     /** 评价数量 */
     private Long commentCount;
 
-    /** 生效中的秒杀最低价（无秒杀时为空） */
-    private java.math.BigDecimal flashPrice;
+    /** 最低的有货规格当前价。 */
+    private BigDecimal displayPrice;
+
+    /** 当最低价规格参与秒杀时，附带该规格的秒杀价和常规价。 */
+    private BigDecimal flashPrice;
+    private BigDecimal flashOriginalPrice;
 
     private LocalDateTime createTime;
 

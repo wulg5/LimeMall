@@ -81,12 +81,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ArrowDown, Search, ShoppingCart } from '@element-plus/icons-vue'
 import { useShopStore } from '@/stores/shop'
-import { useCartStore } from '@/stores/cart'
+import { CART_STORAGE_KEY, useCartStore } from '@/stores/cart'
 import { searchSuggest } from '@/api/portal'
 import { MEMBER_LEVEL } from '@/utils/format'
 import ShopChatWidget from '@/components/ShopChatWidget.vue'
@@ -101,7 +101,15 @@ const keyword = ref('')
 
 const levelText = computed(() => MEMBER_LEVEL[shopStore.info?.level]?.text || '普通会员')
 
+function syncCart(event) {
+  if (event.key === CART_STORAGE_KEY || event.key === null) cartStore.syncFromStorage()
+}
+
+onUnmounted(() => window.removeEventListener('storage', syncCart))
+
 onMounted(async () => {
+  window.addEventListener('storage', syncCart)
+  cartStore.syncFromStorage()
   if (shopStore.token && !shopStore.info) {
     try {
       await shopStore.fetchMe()

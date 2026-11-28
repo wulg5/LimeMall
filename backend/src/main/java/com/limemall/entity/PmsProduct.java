@@ -43,9 +43,15 @@ public class PmsProduct {
     /** 展示价（取SKU最低价） */
     private BigDecimal price;
 
-    /** 生效秒杀价，仅价格排序查询返回。 */
+    /** 商城列表中最低的有货规格当前价。 */
+    @TableField(exist = false)
+    private BigDecimal displayPrice;
+
     @TableField(exist = false)
     private BigDecimal flashPrice;
+
+    @TableField(exist = false)
+    private BigDecimal flashOriginalPrice;
 
     /** 划线原价 */
     private BigDecimal originalPrice;

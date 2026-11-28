@@ -7,6 +7,7 @@ import com.limemall.entity.UmsAdminRole;
 import com.limemall.entity.UmsRole;
 import com.limemall.entity.UmsRoleMenu;
 import com.limemall.mapper.UmsAdminRoleMapper;
+import com.limemall.mapper.UmsChatSessionMapper;
 import com.limemall.mapper.UmsRoleMapper;
 import com.limemall.mapper.UmsRoleMenuMapper;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class RoleService {
     private final UmsRoleMapper roleMapper;
     private final UmsRoleMenuMapper roleMenuMapper;
     private final UmsAdminRoleMapper adminRoleMapper;
+    private final UmsChatSessionMapper chatSessionMapper;
 
     /** 全部角色列表（按排序降序） */
     public List<UmsRole> list() {
@@ -68,6 +70,7 @@ public class RoleService {
             roleMenuMapper.delete(new LambdaQueryWrapper<UmsRoleMenu>()
                     .eq(UmsRoleMenu::getRoleId, dto.getId()));
             saveMenus(dto.getId(), dto.getMenuIds());
+            chatSessionMapper.releaseIneligibleSessions(null);
         }
     }
 
@@ -106,6 +109,7 @@ public class RoleService {
         if (menuIds != null && !menuIds.isEmpty()) {
             saveMenus(roleId, menuIds);
         }
+        chatSessionMapper.releaseIneligibleSessions(null);
     }
 
     private void saveMenus(Long roleId, List<Long> menuIds) {

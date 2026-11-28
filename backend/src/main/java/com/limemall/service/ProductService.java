@@ -1,6 +1,8 @@
 package com.limemall.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -53,6 +55,7 @@ import java.util.stream.Collectors;
 public class ProductService {
 
     private final PmsProductMapper productMapper;
+    private final ObjectMapper objectMapper;
     private final PmsSkuMapper skuMapper;
     private final OmsOrderItemMapper orderItemMapper;
     private final PmsBrandMapper brandMapper;
@@ -65,7 +68,7 @@ public class ProductService {
      */
     public PageResult<ProductVO> page(long pageNum, long pageSize, String name,
                                       Long categoryId, Long brandId, Integer publishStatus) {
-        return page(pageNum, pageSize, name, categoryId, brandId, publishStatus, null);
+        return page(pageNum, pageSize, name, categoryId, brandId, publishStatus, null, false);
     }
 
     /**
@@ -75,14 +78,23 @@ public class ProductService {
      */
     public PageResult<ProductVO> page(long pageNum, long pageSize, String name,
                                       Long categoryId, Long brandId, Integer publishStatus, String sort) {
+        return page(pageNum, pageSize, name, categoryId, brandId, publishStatus, sort, true);
+    }
+
+    private PageResult<ProductVO> page(long pageNum, long pageSize, String name, Long categoryId,
+                                       Long brandId, Integer publishStatus, String sort, boolean storefront) {
         LambdaQueryWrapper<PmsProduct> wrapper = new LambdaQueryWrapper<>();
         wrapper.like(StringUtils.hasText(name), PmsProduct::getName, name)
                 .eq(publishStatus != null, PmsProduct::getPublishStatus, publishStatus)
                 .eq(brandId != null, PmsProduct::getBrandId, brandId);
-        boolean displayPriceSort = "priceAsc".equals(sort) || "priceDesc".equals(sort);
+        Boolean ascending = null;
+        if (storefront) {
+            wrapper.eq(PmsProduct::getDeleteStatus, 0);
+        }
         switch (sort == null ? "" : sort) {
             case "sales" -> wrapper.orderByDesc(PmsProduct::getSales);
-            case "priceAsc", "priceDesc" -> wrapper.eq(PmsProduct::getDeleteStatus, 0);
+            case "priceAsc" -> ascending = true;
+            case "priceDesc" -> ascending = false;
             default -> wrapper.orderByDesc(PmsProduct::getSort).orderByDesc(PmsProduct::getId);
         }
         if (categoryId != null) {
@@ -99,8 +111,8 @@ public class ProductService {
             }
         }
         Page<PmsProduct> request = new Page<>(pageNum, pageSize);
-        IPage<PmsProduct> page = displayPriceSort
-                ? productMapper.selectPageByDisplayPrice(request, wrapper, "priceAsc".equals(sort), LocalDateTime.now())
+        IPage<PmsProduct> page = storefront
+                ? productMapper.selectPageByDisplayPrice(request, wrapper, ascending, LocalDateTime.now())
                 : productMapper.selectPage(request, wrapper);
 
         // 批量装载品牌、分类名称与评分聚合，避免 N+1 查询
@@ -109,7 +121,6 @@ public class ProductService {
         Map<Long, String> categoryNames = categoryMapper.selectList(null).stream()
                 .collect(Collectors.toMap(PmsCategory::getId, PmsCategory::getName));
         Map<Long, ProductRatingVO> ratings = commentService.allRatings();
-        Map<Long, BigDecimal> flashPrices = displayPriceSort ? Map.of() : flashSaleService.activeMinPriceByProduct();
 
         List<ProductVO> records = page.getRecords().stream().map(product -> {
             ProductVO vo = new ProductVO();
@@ -121,7 +132,6 @@ public class ProductService {
                 vo.setAvgRating(rating.getAvgRating());
                 vo.setCommentCount(rating.getCommentCount());
             }
-            vo.setFlashPrice(displayPriceSort ? product.getFlashPrice() : flashPrices.get(product.getId()));
             return vo;
         }).toList();
         return PageResult.of(page, records);
@@ -226,6 +236,13 @@ public class ProductService {
         List<Long> removedIds = existing.stream().map(PmsSku::getId)
                 .filter(id -> !incomingIds.contains(id)).toList();
         requireRemovableSkus(removedIds);
+        List<Long> changedSpecs = dto.getSkus().stream()
+                .filter(sku -> existingById.containsKey(sku.getId()))
+                .filter(sku -> !sameSpecs(existingById.get(sku.getId()).getSpecs(), sku.getSpecs()))
+                .map(SkuItemDTO::getId).toList();
+        if (hasRestorableSku(changedSpecs)) {
+            throw new BusinessException("有未完结订单或可退货订单引用该规格，暂时无法修改规格属性");
+        }
         removedIds.forEach(skuMapper::deleteById);
         for (SkuItemDTO skuDto : dto.getSkus()) {
             if (skuDto.getId() == null) {
@@ -324,8 +341,27 @@ public class ProductService {
     // ------------------------------------------------------------------
 
     private void requireRemovableSkus(List<Long> skuIds) {
-        if (!skuIds.isEmpty() && orderItemMapper.hasRestorableSku(skuIds, LocalDateTime.now().minusDays(OrderService.RETURN_DAYS))) {
+        if (hasRestorableSku(skuIds)) {
             throw new BusinessException("有未完结订单或可退货订单引用该规格，暂时无法删除");
+        }
+    }
+
+    private boolean hasRestorableSku(List<Long> skuIds) {
+        return !skuIds.isEmpty()
+                && orderItemMapper.hasRestorableSku(skuIds, LocalDateTime.now().minusDays(OrderService.RETURN_DAYS));
+    }
+
+    private boolean sameSpecs(String existing, String incoming) {
+        if (Objects.equals(existing, incoming)) {
+            return true;
+        }
+        if (existing == null || incoming == null) {
+            return false;
+        }
+        try {
+            return Objects.equals(objectMapper.readTree(existing), objectMapper.readTree(incoming));
+        } catch (JsonProcessingException e) {
+            return false;
         }
     }
 

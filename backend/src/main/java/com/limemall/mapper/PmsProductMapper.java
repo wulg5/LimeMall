@@ -24,22 +24,29 @@ public interface PmsProductMapper extends BaseMapper<PmsProduct> {
     // customSqlSegment 由 LambdaQueryWrapper 生成，搜索值通过绑定参数传入。
     @Select("""
             <script>
-            SELECT p.*, active_flash.flash_min AS flash_price
+            SELECT p.*, COALESCE(priced.display_price, p.price) AS display_price,
+                   priced.flash_price,
+                   CASE WHEN priced.flash_price IS NOT NULL THEN priced.regular_price END AS flash_original_price
             FROM pms_product p
             LEFT JOIN (
-                SELECT s.product_id AS flash_product_id, MIN(f.flash_price) AS flash_min
-                FROM sms_flash_sale f JOIN pms_sku s ON s.id = f.sku_id
-                WHERE f.status = 1 AND f.start_time &lt;= #{now} AND f.end_time &gt;= #{now}
-                  AND f.flash_price &lt; s.price AND s.stock &gt; 0
-                GROUP BY s.product_id
-            ) active_flash ON active_flash.flash_product_id = p.id
+                SELECT s.product_id, s.price AS regular_price, f.flash_price,
+                       COALESCE(f.flash_price, s.price) AS display_price,
+                       ROW_NUMBER() OVER (PARTITION BY s.product_id
+                           ORDER BY COALESCE(f.flash_price, s.price), f.flash_price IS NULL, s.id) AS price_rank
+                FROM pms_sku s
+                LEFT JOIN sms_flash_sale f ON f.sku_id = s.id AND f.status = 1
+                    AND f.start_time &lt;= #{now} AND f.end_time &gt;= #{now} AND f.flash_price &lt; s.price
+                WHERE s.stock &gt; 0
+            ) priced ON priced.product_id = p.id AND priced.price_rank = 1
             ${ew.customSqlSegment}
-            ORDER BY COALESCE(active_flash.flash_min, p.price)
-            <choose><when test="ascending">ASC</when><otherwise>DESC</otherwise></choose>, p.id DESC
+            <if test="ascending != null">
+                ORDER BY COALESCE(priced.display_price, p.price)
+                <choose><when test="ascending">ASC</when><otherwise>DESC</otherwise></choose>, p.id DESC
+            </if>
             </script>
             """)
     IPage<PmsProduct> selectPageByDisplayPrice(IPage<PmsProduct> page,
                                             @Param(Constants.WRAPPER) Wrapper<PmsProduct> wrapper,
-                                            @Param("ascending") boolean ascending,
+                                            @Param("ascending") Boolean ascending,
                                             @Param("now") LocalDateTime now);
 }
