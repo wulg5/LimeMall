@@ -15,9 +15,13 @@ export function chatHistory(params) {
   return request.get('/admin/chat/sessions', { params })
 }
 
-/** 会话消息记录（接待客服查看时自动标记已读） */
-export function chatSessionMessages(sessionId) {
-  return request.get(`/admin/chat/sessions/${sessionId}/messages`)
+export function chatSessionDetail(sessionId) {
+  return request.get(`/admin/chat/sessions/${sessionId}`)
+}
+
+/** 会话消息记录（接待客服查看时标记本页消息已读） */
+export function chatSessionMessages(sessionId, beforeId) {
+  return request.get(`/admin/chat/sessions/${sessionId}/messages`, { params: { beforeId } })
 }
 
 /** 接入会话（一对一分派，客服专员权限） */

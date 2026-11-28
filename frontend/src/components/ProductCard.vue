@@ -36,6 +36,7 @@ import { ShoppingCart } from '@element-plus/icons-vue'
 import { getProductDetail } from '@/api/portal'
 import { useCartStore } from '@/stores/cart'
 import { money, specsToText } from '@/utils/format'
+import { cheapestAvailableSku, skuPrice } from '@/utils/sku'
 
 const props = defineProps({
   product: { type: Object, required: true }
@@ -60,16 +61,11 @@ const origPrice = computed(() =>
   Number((props.product.flashPrice ? props.product.flashOriginalPrice : props.product.originalPrice) ?? 0)
 )
 
-const skuPrice = (sku) => Number(sku.flashPrice ?? sku.price)
-
-/** 同价时优先选择参加秒杀的规格，其次按 SKU ID。 */
 async function quickAdd() {
   adding.value = true
   try {
     const detail = await getProductDetail(props.product.id)
-    const [sku] = (detail.skus || []).filter(item => item.stock > 0).sort((a, b) =>
-      skuPrice(a) - skuPrice(b) || Number(!a.flashPrice) - Number(!b.flashPrice) || a.id - b.id
-    )
+    const sku = cheapestAvailableSku(detail.skus || [])
     if (!sku) {
       ElMessage.warning('该商品暂时缺货')
       return

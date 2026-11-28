@@ -61,6 +61,9 @@ public class RoleService {
         if (existing == null) {
             throw new BusinessException("角色不存在");
         }
+        if (SUPER_ROLE_ID == dto.getId() && !Integer.valueOf(1).equals(dto.getStatus())) {
+            throw new BusinessException("超级管理员角色不允许禁用");
+        }
         existing.setName(dto.getName());
         existing.setDescription(dto.getDescription());
         existing.setSort(dto.getSort());
@@ -70,8 +73,8 @@ public class RoleService {
             roleMenuMapper.delete(new LambdaQueryWrapper<UmsRoleMenu>()
                     .eq(UmsRoleMenu::getRoleId, dto.getId()));
             saveMenus(dto.getId(), dto.getMenuIds());
-            chatSessionMapper.releaseIneligibleSessions(null);
         }
+        chatSessionMapper.releaseIneligibleSessions(null);
     }
 
     /** 删除角色：被管理员引用的角色不允许删除 */

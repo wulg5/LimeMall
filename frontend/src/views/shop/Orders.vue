@@ -134,7 +134,8 @@ let latestDetailRequest = 0
 
 const nowTs = ref(Date.now())
 let tickTimer = null
-let lastExpiryRefresh = 0
+let lastPendingRefresh = Date.now()
+let loadingOrders = false
 let latestListRequest = 0
 
 onMounted(() => {
@@ -148,11 +149,9 @@ onBeforeUnmount(() => {
 
 function tick() {
   nowTs.value = Date.now()
-  if (nowTs.value - lastExpiryRefresh < 10_000) return
-  const expired = list.value.some(order => order.status === 0 && order.paymentDeadline
-    && dayjs(order.paymentDeadline).valueOf() <= nowTs.value)
-  if (expired) {
-    lastExpiryRefresh = nowTs.value
+  if (document.hidden || loadingOrders || nowTs.value - lastPendingRefresh < 5_000) return
+  if (list.value.some(order => order.status === 0)) {
+    lastPendingRefresh = nowTs.value
     load().catch(() => {})
   }
 }
@@ -178,14 +177,19 @@ function canApplyRefund(order) {
 
 async function load() {
   const request = ++latestListRequest
-  const data = await getMyOrders({
-    pageNum: pageNum.value,
-    pageSize: pageSize.value,
-    status: activeTab.value === 'all' ? undefined : Number(activeTab.value)
-  })
-  if (request !== latestListRequest) return
-  list.value = data.records
-  total.value = data.total
+  loadingOrders = true
+  try {
+    const data = await getMyOrders({
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+      status: activeTab.value === 'all' ? undefined : Number(activeTab.value)
+    })
+    if (request !== latestListRequest) return
+    list.value = data.records
+    total.value = data.total
+  } finally {
+    if (request === latestListRequest) loadingOrders = false
+  }
 }
 
 function handleTabChange() {

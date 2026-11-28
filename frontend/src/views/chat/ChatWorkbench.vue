@@ -77,6 +77,7 @@
           </div>
 
           <div ref="threadRef" class="thread">
+            <el-button v-if="hasOlder" link type="primary" :loading="loadingOlder" @click="loadOlderMessages">加载更早消息</el-button>
             <div v-if="!messages.length" class="thread-empty">暂无消息</div>
             <div v-for="msg in messages" :key="msg.id" class="thread-msg"
                  :class="{ mine: msg.fromType === 2 }">
@@ -106,13 +107,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { chatClaim, chatEnd, chatHistory, chatMine, chatQueue, chatReply, chatSessionMessages } from '@/api/chat'
+import { chatClaim, chatEnd, chatHistory, chatMine, chatQueue, chatReply, chatSessionDetail, chatSessionMessages } from '@/api/chat'
 import { connectChatSocket, disconnectChatSocket } from '@/utils/chatSocket'
+import { CHAT_PAGE_SIZE, mergeRecentMessages } from '@/utils/chatMessages'
 import LevelBadge from '@/components/LevelBadge.vue'
 
 const userStore = useUserStore()
@@ -126,6 +128,9 @@ const historyPage = ref(1)
 
 const active = ref(null)
 const messages = ref([])
+const activeVerified = ref(false)
+const hasOlder = ref(false)
+const loadingOlder = ref(false)
 const draft = ref('')
 const sending = ref(false)
 const claiming = ref(false)
@@ -139,17 +144,17 @@ const hasReplyRole = computed(() => userStore.hasPerm('ums:chat:reply'))
 const currentList = computed(() => (tab.value === 'queue' ? queue.value : mine.value))
 
 const canClaim = computed(() =>
-  hasReplyRole.value && active.value && active.value.status === 0 && !active.value.agentId)
+  hasReplyRole.value && activeVerified.value && active.value && active.value.status === 0 && !active.value.agentId)
 
 const canEnd = computed(() =>
-  hasReplyRole.value && active.value && active.value.status === 0
+  hasReplyRole.value && activeVerified.value && active.value && active.value.status === 0
   && active.value.agentId === myAdminId.value)
 
 const canSend = computed(() => canEnd.value)
 
 const readonlyReason = computed(() => {
   if (!hasReplyRole.value) return '管理员/运营仅可查看会话记录，回复权限属于客服专员'
-  if (!active.value) return ''
+  if (!activeVerified.value) return '正在核对会话状态'
   if (active.value.status !== 0) return '会话已结束，无法继续回复'
   if (!active.value.agentId) return '该会话尚未接入，请先点击「接入会话」'
   return '仅该会话的接待客服可回复'
@@ -179,13 +184,6 @@ async function refreshLists() {
   const [q, m] = await Promise.all(tasks)
   queue.value = q
   mine.value = m
-  if (active.value) {
-    // 同步 active 的最新状态（可能被其他端结束）
-    const latest = [...q, ...m].find((s) => s.id === active.value.id)
-    if (latest) {
-      active.value = { ...active.value, ...latest }
-    }
-  }
   if (tab.value === 'history') {
     await loadHistory()
   }
@@ -210,7 +208,10 @@ async function loadHistory() {
 
 function openSession(session) {
   active.value = { ...session }
+  activeVerified.value = false
   messages.value = []
+  hasOlder.value = false
+  loadingOlder.value = false
   draft.value = ''
   loadMessages()
 }
@@ -219,12 +220,37 @@ async function loadMessages() {
   const sessionId = active.value?.id
   if (!sessionId) return
   const request = ++latestMessageRequest
-  const received = await chatSessionMessages(sessionId)
+  const [current, received] = await Promise.all([chatSessionDetail(sessionId), chatSessionMessages(sessionId)])
   if (request !== latestMessageRequest || active.value?.id !== sessionId) return
-  messages.value = received
+  active.value = current
+  activeVerified.value = true
+  const thread = threadRef.value
+  const wasAtBottom = !thread || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 48
+  const result = mergeRecentMessages(messages.value, received)
+  messages.value = result.messages
+  if (result.reset) hasOlder.value = received.length === CHAT_PAGE_SIZE
   await nextTick()
-  if (request === latestMessageRequest && threadRef.value) {
+  if (request === latestMessageRequest && threadRef.value && (result.reset || wasAtBottom)) {
     threadRef.value.scrollTop = threadRef.value.scrollHeight
+  }
+}
+
+async function loadOlderMessages() {
+  const sessionId = active.value?.id
+  const beforeId = messages.value[0]?.id
+  if (!sessionId || !beforeId || loadingOlder.value || !hasOlder.value) return
+  loadingOlder.value = true
+  try {
+    const received = await chatSessionMessages(sessionId, beforeId)
+    if (active.value?.id !== sessionId || messages.value[0]?.id !== beforeId) return
+    const thread = threadRef.value
+    const oldHeight = thread?.scrollHeight ?? 0
+    messages.value = [...received, ...messages.value]
+    hasOlder.value = received.length === CHAT_PAGE_SIZE
+    await nextTick()
+    if (thread && active.value?.id === sessionId) thread.scrollTop += thread.scrollHeight - oldHeight
+  } finally {
+    if (active.value?.id === sessionId) loadingOlder.value = false
   }
 }
 
@@ -237,9 +263,8 @@ async function handleClaim() {
     ElMessage.success('已接入会话，现在可以回复会员了')
     await refreshLists()
     if (active.value?.id === sessionId) {
-      active.value.agentId = myAdminId.value
-      active.value.agentNickname = userStore.info?.nickname
-      tab.value = 'mine'
+      await loadMessages()
+      if (active.value?.id === sessionId) tab.value = 'mine'
     }
   } finally {
     claiming.value = false
@@ -266,7 +291,7 @@ async function handleSend() {
   const sessionId = active.value?.id
   const submittedDraft = draft.value
   const content = submittedDraft.trim()
-  if (!content || !sessionId || sending.value) return
+  if (!canSend.value || !content || !sessionId || sending.value) return
   sending.value = true
   try {
     await chatReply(sessionId, content)

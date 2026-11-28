@@ -168,23 +168,26 @@ async function loadRecords() {
 }
 
 async function handleExchange(coupon) {
+  if (exchangingId.value !== null) return
+  const expectedPoints = coupon.pointsPrice
+  exchangingId.value = coupon.id
   try {
     await ElMessageBox.confirm(
-      `将消耗 ${coupon.pointsPrice} 积分兑换「${coupon.name}」，兑换后发放至我的优惠券。确认兑换？`,
+      `将消耗 ${expectedPoints} 积分兑换「${coupon.name}」，兑换后发放至我的优惠券。确认兑换？`,
       '积分兑换',
       { type: 'warning' }
     )
-  } catch (e) {
+  } catch {
+    exchangingId.value = null
     return
   }
-  exchangingId.value = coupon.id
   try {
-    await exchangeCoupon(coupon.id)
+    await exchangeCoupon(coupon.id, expectedPoints)
     ElMessage.success('兑换成功，优惠券已发放到「我的优惠券」')
     await shopStore.fetchMe()
-    coupons.value = await getExchangeCoupons()
   } finally {
     exchangingId.value = null
+    coupons.value = await getExchangeCoupons()
   }
 }
 </script>

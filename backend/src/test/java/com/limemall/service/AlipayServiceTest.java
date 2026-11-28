@@ -259,6 +259,29 @@ class AlipayServiceTest {
         assertEquals(3, requests.get());
     }
 
+    @Test
+    void rejectsMalformedRotationWithoutReplacingWorkingCredentials() {
+        useWritableSettings();
+        OmsOrder pinned = order();
+        LocalDateTime deadline = LocalDateTime.now().plusMinutes(10);
+        pinned.setPaymentProfileId(service.buildPagePayUrl(pinned, deadline, null).profileId());
+        Map<String, String> original = settings.getAll();
+
+        PayConfigSaveDTO badPrivateKey = new PayConfigSaveDTO();
+        badPrivateKey.setEnabled(true);
+        badPrivateKey.setMerchantPrivateKey("invalid private key");
+        assertThrows(BusinessException.class, () -> service.saveConfig(badPrivateKey));
+
+        PayConfigSaveDTO badPublicKey = new PayConfigSaveDTO();
+        badPublicKey.setEnabled(false);
+        badPublicKey.setAlipayPublicKey("invalid public key");
+        assertThrows(BusinessException.class, () -> service.saveConfig(badPublicKey));
+
+        assertEquals(original, settings.getAll());
+        assertTrue(service.isEnabled());
+        assertNotNull(service.checkPayment(pinned, false).paidAt());
+    }
+
     private void useWritableSettings() {
         Map<String, String> active = new HashMap<>(Map.of(AlipayService.KEY_ENABLED, "1",
                 AlipayService.KEY_NOTIFY_URL, "https://notify.example.test/notify"));

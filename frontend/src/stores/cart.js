@@ -1,15 +1,19 @@
 import { defineStore } from 'pinia'
 
 export const CART_STORAGE_KEY = 'lime_cart'
+
+export function newCartRevision() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+}
 const BUY_NOW_KEY = 'lime_buy_now'
 const CHECKOUT_HISTORY_LIMIT = 100
 
 function readCart() {
   try {
     const value = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || '[]')
-    if (Array.isArray(value)) return { items: value, completedCheckouts: [] }
+    if (Array.isArray(value)) return { items: value, completedCheckouts: [], revision: null }
     if (!Array.isArray(value?.items)) return null
-    return { items: value.items, completedCheckouts: value.completedCheckouts || [] }
+    return { items: value.items, completedCheckouts: value.completedCheckouts || [], revision: value.revision ?? null }
   } catch {
     return null
   }
@@ -25,7 +29,7 @@ function loadBuyNowItem() {
 
 export const useCartStore = defineStore('cart', {
   state: () => ({
-    ...(readCart() || { items: [], completedCheckouts: [] }),
+    ...(readCart() || { items: [], completedCheckouts: [], revision: null }),
     buyNowItem: loadBuyNowItem(),
     useStoredCart: true
   }),
@@ -48,11 +52,14 @@ export const useCartStore = defineStore('cart', {
     updateCart(change) {
       const update = () => {
         this.syncFromStorage()
+        const previousItems = JSON.stringify(this.items)
         change()
+        if (previousItems !== JSON.stringify(this.items)) this.revision = newCartRevision()
         try {
           localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({
             items: this.items,
-            completedCheckouts: this.completedCheckouts
+            completedCheckouts: this.completedCheckouts,
+            revision: this.revision
           }))
         } catch {
           this.useStoredCart = false

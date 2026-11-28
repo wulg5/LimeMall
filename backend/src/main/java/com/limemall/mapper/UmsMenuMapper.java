@@ -21,6 +21,7 @@ public interface UmsMenuMapper extends BaseMapper<UmsMenu> {
             SELECT DISTINCT m.* FROM ums_menu m
             INNER JOIN ums_role_menu rm ON m.id = rm.menu_id
             INNER JOIN ums_admin_role ar ON rm.role_id = ar.role_id
+            INNER JOIN ums_role r ON r.id = ar.role_id AND r.status = 1
             WHERE ar.admin_id = #{adminId} AND m.status = 1
             ORDER BY m.sort DESC
             """)

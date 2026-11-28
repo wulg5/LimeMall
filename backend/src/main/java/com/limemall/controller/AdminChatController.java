@@ -60,11 +60,18 @@ public class AdminChatController {
         return Result.ok(chatService.history(pageNum, pageSize));
     }
 
+    @GetMapping("/sessions/{id}")
+    @PreAuthorize("hasAuthority('ums:chat:list')")
+    @Operation(summary = "查询会话当前状态")
+    public Result<ChatSessionVO> session(@PathVariable Long id) {
+        return Result.ok(chatService.sessionDetail(id));
+    }
+
     @GetMapping("/sessions/{id}/messages")
     @PreAuthorize("hasAuthority('ums:chat:list')")
     @Operation(summary = "会话消息记录（接待客服查看时自动标记已读）")
-    public Result<List<UmsChatMessage>> messages(@PathVariable Long id) {
-        return Result.ok(chatService.agentMessages(SecurityUtils.getAdminId(), id));
+    public Result<List<UmsChatMessage>> messages(@PathVariable Long id, @RequestParam(required = false) Long beforeId) {
+        return Result.ok(chatService.agentMessages(SecurityUtils.getAdminId(), id, beforeId));
     }
 
     @PostMapping("/sessions/{id}/claim")

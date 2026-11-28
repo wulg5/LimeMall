@@ -80,7 +80,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createOrder, getCheckoutResult, getMyCoupons, getOrderQuote } from '@/api/portal'
-import { useCartStore } from '@/stores/cart'
+import { newCartRevision, useCartStore } from '@/stores/cart'
 import { useShopStore } from '@/stores/shop'
 import { money } from '@/utils/format'
 
@@ -99,10 +99,12 @@ cartStore.syncFromStorage()
 const buyingNow = route.query.buyNow === '1'
 const buyNowItem = buyingNow ? cartStore.buyNowItem : null
 const selectedItems = buyingNow ? (buyNowItem ? [buyNowItem] : []) : cartStore.checkedItems
+const cartRevision = cartStore.revision
 const items = selectedItems.map(item => ({ ...item }))
 const orderItems = items.map(({ skuId, quantity }) => ({ skuId, quantity }))
 const legacyKeyPrefix = `lime_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now:' : ''}`
 const retryKey = `lime_pending_checkout:${shopStore.info?.id}:${buyingNow ? 'buy-now' : 'cart'}`
+const sharedRetryKey = `lime_shared_checkout:${shopStore.info?.id}`
 const legacyRequests = new Map()
 let checkoutRequestId = readCheckoutRequestId()
 const pendingConfirmation = ref(Boolean(checkoutRequestId))
@@ -178,9 +180,38 @@ function readCheckoutRequestId() {
   }
 }
 
+function readSharedCheckout() {
+  if (buyingNow) return null
+  try {
+    const attempt = JSON.parse(localStorage.getItem(sharedRetryKey) || 'null')
+    return /^[0-9a-f]{32}$/.test(attempt?.id || '') ? attempt : null
+  } catch {
+    return null
+  }
+}
+
+function writeSharedCheckout(attempt) {
+  try {
+    localStorage.setItem(sharedRetryKey, JSON.stringify(attempt))
+  } catch {
+    // 当前标签页仍使用自己的结算请求号。
+  }
+}
+
+function syncSharedCheckout() {
+  const shared = readSharedCheckout()
+  if (shared && (!shared.completed || shared.revision === cartRevision || shared.id === checkoutRequestId)) {
+    checkoutRequestId = shared.id
+    pendingConfirmation.value = true
+  }
+}
+
 function rememberCheckoutRequest() {
-  checkoutRequestId ||= Array.from(crypto.getRandomValues(new Uint8Array(16)),
-    (byte) => byte.toString(16).padStart(2, '0')).join('')
+  checkoutRequestId ||= (!buyingNow && cartRevision) || newCartRevision()
+  const shared = readSharedCheckout()
+  if (!buyingNow && shared?.id !== checkoutRequestId) {
+    writeSharedCheckout({ id: checkoutRequestId, revision: cartRevision, completed: false })
+  }
   pendingConfirmation.value = true
   try {
     sessionStorage.setItem(retryKey, checkoutRequestId)
@@ -202,6 +233,10 @@ async function showPlacedOrder(order, recovered = false) {
     }
   } else {
     await cartStore.removePurchased(requestId, order.items)
+    const shared = readSharedCheckout()
+    if (shared?.id === requestId && !shared.completed) {
+      writeSharedCheckout({ ...shared, completed: true })
+    }
   }
   try {
     if (sessionStorage.getItem(retryKey) === requestId) sessionStorage.removeItem(retryKey)
@@ -220,11 +255,12 @@ async function showPlacedOrder(order, recovered = false) {
     : order.status === 4
       ? `${orderNumber}，该订单已关闭。`
       : `${orderNumber}，请在订单列表查看当前状态。`
-  await ElMessageBox.alert(message, recovered ? '已找回原订单' : '订单已生成', {
+  ElMessageBox.alert(message, recovered ? '已找回原订单' : '订单已生成', {
     type: 'success',
     confirmButtonText: requiresPayment ? '查看订单并支付' : '查看订单'
-  }).catch(() => {})
-  if (mounted && route.fullPath === checkoutPath) router.push('/shop/orders')
+  }).catch(() => {}).then(() => {
+    if (mounted && route.fullPath === checkoutPath) router.push('/shop/orders')
+  })
 }
 
 async function recoverOrder() {
@@ -244,6 +280,7 @@ async function recoverOrder() {
 async function refreshCheckout() {
   quoting.value = true
   try {
+    syncSharedCheckout()
     if (!await recoverOrder() && items.length) {
       await Promise.all([loadQuote(null), loadCoupons()])
     }
@@ -255,6 +292,7 @@ async function refreshCheckout() {
 }
 
 onMounted(async () => {
+  syncSharedCheckout()
   if (!items.length && !pendingConfirmation.value) {
     ElMessage.warning(buyingNow ? '请从商品详情重新发起立即购买' : '请先在购物车勾选要结算的商品')
     router.replace('/shop/cart')
@@ -268,7 +306,30 @@ async function handleSubmit() {
   if (!quote.value || quoting.value || submitting.value) return
   submitting.value = true
   try {
+    const locks = !buyingNow && globalThis.navigator?.locks
+    if (locks) {
+      await locks.request(sharedRetryKey, submitCheckout)
+    } else {
+      await submitCheckout()
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitCheckout() {
+  try {
+    if (!mounted || route.fullPath !== checkoutPath) return
+    syncSharedCheckout()
     if (await recoverOrder()) return
+    if (!buyingNow) {
+      cartStore.syncFromStorage()
+      if (cartStore.revision !== cartRevision) {
+        ElMessage.warning('购物车已更新，请重新结算')
+        router.replace('/shop/cart')
+        return
+      }
+    }
     await formRef.value.validate()
     rememberCheckoutRequest()
     const order = await createOrder({
@@ -297,8 +358,6 @@ async function handleSubmit() {
     } catch {
       // 查询失败时继续使用同一个请求号，避免另建订单。
     }
-  } finally {
-    submitting.value = false
   }
 }
 </script>

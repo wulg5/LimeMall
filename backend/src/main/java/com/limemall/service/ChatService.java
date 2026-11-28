@@ -60,7 +60,7 @@ public class ChatService {
     // 会员端
     // ==================================================================
 
-    /** 会员端当前会话与消息（拉取即把客服发来的消息标记已读） */
+    /** 会员端当前会话与最近一页消息。 */
     public Map<String, Object> memberCurrent(Long memberId) {
         Map<String, Object> data = new HashMap<>();
         UmsChatSession session = findOpenSession(memberId, false);
@@ -75,10 +75,17 @@ public class ChatService {
             data.put("messages", List.of());
             return data;
         }
-        markRead(session.getId(), FROM_ADMIN);
         data.put("session", buildSessionVO(session));
-        data.put("messages", lastMessages(session.getId()));
+        data.put("messages", readMessages(session.getId(), null, FROM_ADMIN));
         return data;
+    }
+
+    public List<UmsChatMessage> memberMessages(Long memberId, Long sessionId, Long beforeId) {
+        UmsChatSession session = loadSession(sessionId);
+        if (!memberId.equals(session.getMemberId())) {
+            throw new BusinessException("会话不存在");
+        }
+        return readMessages(sessionId, beforeId, FROM_ADMIN);
     }
 
     /** 会员发送消息：无进行中会话则自动创建（待接入） */
@@ -166,13 +173,15 @@ public class ChatService {
         return PageResult.of(page, vos);
     }
 
-    /** 会话消息记录：任何具有查看权限的管理员可看；接待客服查看时标记会员消息已读 */
-    public List<UmsChatMessage> agentMessages(Long adminId, Long sessionId) {
+    public ChatSessionVO sessionDetail(Long sessionId) {
+        return buildSessionVO(loadSession(sessionId));
+    }
+
+    /** 接待客服查看消息时，只标记此次返回的会员消息。 */
+    public List<UmsChatMessage> agentMessages(Long adminId, Long sessionId, Long beforeId) {
         UmsChatSession session = loadSession(sessionId);
-        if (adminId != null && adminId.equals(session.getAgentId())) {
-            markRead(sessionId, FROM_MEMBER);
-        }
-        return lastMessages(sessionId);
+        Integer fromType = adminId != null && adminId.equals(session.getAgentId()) ? FROM_MEMBER : null;
+        return readMessages(sessionId, beforeId, fromType);
     }
 
     /** 接入尚无有效客服的会话，防止多个客服同时接待。 */
@@ -268,21 +277,25 @@ public class ChatService {
         messageMapper.insert(message);
     }
 
-    /** 标记某会话中「指定发送方」的消息为已读 */
-    private void markRead(Long sessionId, int fromType) {
-        messageMapper.update(null, new LambdaUpdateWrapper<UmsChatMessage>()
-                .set(UmsChatMessage::getIsRead, 1)
-                .eq(UmsChatMessage::getSessionId, sessionId)
-                .eq(UmsChatMessage::getFromType, fromType)
-                .eq(UmsChatMessage::getIsRead, 0));
-    }
-
-    private List<UmsChatMessage> lastMessages(Long sessionId) {
+    private List<UmsChatMessage> readMessages(Long sessionId, Long beforeId, Integer markFromType) {
         List<UmsChatMessage> messages = messageMapper.selectList(
                 new LambdaQueryWrapper<UmsChatMessage>()
                         .eq(UmsChatMessage::getSessionId, sessionId)
+                        .lt(beforeId != null, UmsChatMessage::getId, beforeId)
                         .orderByDesc(UmsChatMessage::getId)
                         .last("LIMIT " + HISTORY_LIMIT));
+        if (markFromType != null) {
+            List<UmsChatMessage> unread = messages.stream()
+                    .filter(message -> markFromType.equals(message.getFromType()) && message.getIsRead() == 0)
+                    .toList();
+            if (!unread.isEmpty()) {
+                messageMapper.update(null, new LambdaUpdateWrapper<UmsChatMessage>()
+                        .set(UmsChatMessage::getIsRead, 1)
+                        .in(UmsChatMessage::getId, unread.stream().map(UmsChatMessage::getId).toList())
+                        .eq(UmsChatMessage::getIsRead, 0));
+                unread.forEach(message -> message.setIsRead(1));
+            }
+        }
         Collections.reverse(messages);
         return messages;
     }

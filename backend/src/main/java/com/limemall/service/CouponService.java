@@ -296,7 +296,7 @@ public class CouponService {
      * - 全程同一事务，任一步失败自动回滚。
      */
     @Transactional
-    public void exchange(Long memberId, Long couponId) {
+    public void exchange(Long memberId, Long couponId, Integer expectedPoints) {
         UmsMember member = memberMapper.lockById(memberId);
         SmsCoupon coupon = couponMapper.selectById(couponId);
         LocalDateTime now = LocalDateTime.now();
@@ -313,7 +313,11 @@ public class CouponService {
         if (myCount >= coupon.getPerLimit()) {
             throw new BusinessException("已达到该券兑换上限");
         }
-        pointsLedgerService.deduct(member, exchangeCost(coupon.getAmount()), "积分兑换：" + coupon.getName(), now);
+        int points = exchangeCost(coupon.getAmount());
+        if (!Integer.valueOf(points).equals(expectedPoints)) {
+            throw new BusinessException("兑换所需积分已变化，请刷新并确认后重试");
+        }
+        pointsLedgerService.deduct(member, points, "积分兑换：" + coupon.getName(), now);
         int stock = couponMapper.update(null, new LambdaUpdateWrapper<SmsCoupon>()
                 .setSql("receive_count = receive_count + 1")
                 .eq(SmsCoupon::getId, couponId)

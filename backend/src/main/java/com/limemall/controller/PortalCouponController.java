@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -54,8 +55,8 @@ public class PortalCouponController {
 
     @PostMapping("/{id}/exchange")
     @Operation(summary = "积分兑换优惠券")
-    public Result<Void> exchange(@PathVariable Long id) {
-        couponService.exchange(SecurityUtils.getMemberId(), id);
+    public Result<Void> exchange(@PathVariable Long id, @RequestParam(required = false) Integer expectedPoints) {
+        couponService.exchange(SecurityUtils.getMemberId(), id, expectedPoints);
         return Result.ok();
     }
 }

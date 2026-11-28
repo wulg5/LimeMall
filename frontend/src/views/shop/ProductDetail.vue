@@ -119,6 +119,7 @@ import { ShoppingCart } from '@element-plus/icons-vue'
 import { getProductComments, getProductDetail } from '@/api/portal'
 import { useCartStore } from '@/stores/cart'
 import { money, specsToText } from '@/utils/format'
+import { cheapestAvailableSku } from '@/utils/sku'
 import LevelBadge from '@/components/LevelBadge.vue'
 
 const route = useRoute()
@@ -168,7 +169,7 @@ watch([() => route.params.id, () => route.query.skuId], async ([id, skuId], _, o
     currentPic.value = product.mainPic
     const skus = product.skus || []
     const selected = skus.find((sku) => String(sku.id) === skuId)
-      || skus.find((sku) => sku.stock > 0) || skus[0]
+      || cheapestAvailableSku(skus) || skus[0]
     selectedSkuId.value = selected?.id ?? null
     loadComments()
   } catch {

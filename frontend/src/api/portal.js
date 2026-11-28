@@ -71,8 +71,8 @@ export function getExchangeCoupons() {
 }
 
 /** 积分兑换优惠券 */
-export function exchangeCoupon(id) {
-  return request.post(`/portal/coupons/${id}/exchange`)
+export function exchangeCoupon(id, expectedPoints) {
+  return request.post(`/portal/coupons/${id}/exchange`, undefined, { params: { expectedPoints } })
 }
 
 /* ---------------- 商品评价 ---------------- */
@@ -145,6 +145,10 @@ export function getPointsRecords(params) {
 
 export function getChatCurrent() {
   return request.get('/portal/chat/current')
+}
+
+export function getChatMessages(sessionId, beforeId) {
+  return request.get(`/portal/chat/sessions/${sessionId}/messages`, { params: { beforeId } })
 }
 
 export function sendChatMessage(content) {

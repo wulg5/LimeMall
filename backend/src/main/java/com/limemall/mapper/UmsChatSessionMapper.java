@@ -23,6 +23,7 @@ public interface UmsChatSessionMapper extends BaseMapper<UmsChatSession> {
                 SELECT 1
                 FROM ums_admin candidate
                 JOIN ums_admin_role ar ON ar.admin_id = candidate.id
+                JOIN ums_role r ON r.id = ar.role_id AND r.status = 1
                 JOIN ums_role_menu rm ON rm.role_id = ar.role_id
                 JOIN ums_menu m ON m.id = rm.menu_id
                 WHERE candidate.id = s.agent_id AND candidate.status = 1

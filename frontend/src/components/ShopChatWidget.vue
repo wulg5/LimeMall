@@ -14,7 +14,7 @@
             <div class="chat-title">在线客服</div>
             <div class="chat-sub">{{ agentSubTitle }}</div>
           </div>
-          <el-icon class="close-btn" @click="visible = false"><Close /></el-icon>
+          <el-icon class="close-btn" @click="closePanel"><Close /></el-icon>
         </div>
 
         <div ref="listRef" class="chat-messages">
@@ -23,6 +23,7 @@
             <el-button type="primary" size="small" @click="goLogin">去登录</el-button>
           </div>
           <template v-else>
+            <el-button v-if="hasOlder" link type="primary" :loading="loadingOlder" @click="loadOlderMessages">加载更早消息</el-button>
             <div v-if="!messages.length" class="chat-empty">
               <p>您好，这里是青柠商城客服，请问有什么可以帮您？</p>
             </div>
@@ -46,11 +47,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Close, Service } from '@element-plus/icons-vue'
-import { getChatCurrent, sendChatMessage } from '@/api/portal'
+import { getChatCurrent, getChatMessages, sendChatMessage } from '@/api/portal'
 import { connectChatSocket, disconnectChatSocket } from '@/utils/chatSocket'
+import { CHAT_PAGE_SIZE, mergeRecentMessages } from '@/utils/chatMessages'
 import { useShopStore } from '@/stores/shop'
 
 const route = useRoute()
@@ -60,10 +62,13 @@ const shopStore = useShopStore()
 const visible = ref(false)
 const messages = ref([])
 const session = ref(null)
+const hasOlder = ref(false)
+const loadingOlder = ref(false)
 const draft = ref('')
 const sending = ref(false)
 const listRef = ref()
 let pollTimer = null
+let latestMessageRequest = 0
 
 /** 头部副标题：展示当前接待客服（一对一分派后由后端返回） */
 const agentSubTitle = computed(() => {
@@ -86,33 +91,78 @@ function togglePanel() {
     connectChatSocket(shopStore.token, () => loadMessages())
     startPoll()
   } else {
-    stopPoll()
-    disconnectChatSocket()
+    closePanel()
   }
 }
+
+function closePanel() {
+  visible.value = false
+  latestMessageRequest++
+  stopPoll()
+  disconnectChatSocket()
+}
+
+watch(() => shopStore.token, () => {
+  closePanel()
+  session.value = null
+  messages.value = []
+  hasOlder.value = false
+  loadingOlder.value = false
+  draft.value = ''
+})
 
 function goLogin() {
   router.push({ path: '/shop/login', query: { redirect: route.fullPath } })
 }
 
 async function loadMessages() {
-  if (!shopStore.token) return
+  if (!visible.value || !shopStore.token) return
+  const request = ++latestMessageRequest
   try {
     const data = await getChatCurrent()
+    if (request !== latestMessageRequest || !visible.value) return
+    const changedSession = session.value?.id !== data.session?.id
     session.value = data.session || null
-    messages.value = data.messages || []
+    if (changedSession) loadingOlder.value = false
+    const received = data.messages || []
+    const thread = listRef.value
+    const wasAtBottom = !thread || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 48
+    const result = mergeRecentMessages(changedSession ? [] : messages.value, received)
+    messages.value = result.messages
+    if (result.reset) hasOlder.value = received.length === CHAT_PAGE_SIZE
     await nextTick()
-    if (listRef.value) {
+    if (request === latestMessageRequest && listRef.value && (result.reset || wasAtBottom)) {
       listRef.value.scrollTop = listRef.value.scrollHeight
     }
-  } catch (e) {
+  } catch {
     /* 登录态失效由拦截器统一处理 */
+  }
+}
+
+async function loadOlderMessages() {
+  const sessionId = session.value?.id
+  const token = shopStore.token
+  const beforeId = messages.value[0]?.id
+  if (!sessionId || !beforeId || loadingOlder.value || !hasOlder.value) return
+  loadingOlder.value = true
+  try {
+    const received = await getChatMessages(sessionId, beforeId)
+    if (!visible.value || shopStore.token !== token || session.value?.id !== sessionId
+        || messages.value[0]?.id !== beforeId) return
+    const thread = listRef.value
+    const oldHeight = thread?.scrollHeight ?? 0
+    messages.value = [...received, ...messages.value]
+    hasOlder.value = received.length === CHAT_PAGE_SIZE
+    await nextTick()
+    if (thread && session.value?.id === sessionId) thread.scrollTop += thread.scrollHeight - oldHeight
+  } finally {
+    if (session.value?.id === sessionId) loadingOlder.value = false
   }
 }
 
 async function handleSend() {
   const content = draft.value.trim()
-  if (!content) return
+  if (!content || sending.value) return
   sending.value = true
   try {
     await sendChatMessage(content)

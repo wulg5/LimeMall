@@ -127,11 +127,29 @@ public class AlipayService {
     @Transactional
     public void saveConfig(PayConfigSaveDTO dto) {
         ResolvedConfig previous = resolve();
-        if (Boolean.TRUE.equals(dto.getEnabled())
-                && !validNotifyUrl(firstNonBlank(dto.getNotifyUrl(), previous.notifyUrl()))) {
+        boolean enabled = Boolean.TRUE.equals(dto.getEnabled());
+        if (enabled && !validNotifyUrl(firstNonBlank(dto.getNotifyUrl(), previous.notifyUrl()))) {
             throw new BusinessException("启用支付宝支付前，请填写公网可访问的异步通知地址");
         }
-        configService.put(KEY_ENABLED, Boolean.TRUE.equals(dto.getEnabled()) ? "1" : "0", "支付宝启用开关");
+        ChannelConfig original = previous.channel();
+        if (enabled) {
+            ChannelConfig candidate = new ChannelConfig(
+                    firstNonBlank(dto.getAppId(), original.appId()),
+                    firstNonBlank(dto.getMerchantPrivateKey(), original.privateKey()),
+                    firstNonBlank(dto.getAlipayPublicKey(), original.publicKey()),
+                    firstNonBlank(dto.getGatewayUrl(), original.gatewayUrl()));
+            requireChannelKeys(candidate);
+            parsePrivateKey(candidate.privateKey());
+            parsePublicKey(candidate.publicKey());
+        } else {
+            if (StringUtils.hasText(dto.getMerchantPrivateKey())) {
+                parsePrivateKey(dto.getMerchantPrivateKey());
+            }
+            if (StringUtils.hasText(dto.getAlipayPublicKey())) {
+                parsePublicKey(dto.getAlipayPublicKey());
+            }
+        }
+        configService.put(KEY_ENABLED, enabled ? "1" : "0", "支付宝启用开关");
         if (StringUtils.hasText(dto.getAppId())) {
             configService.put(KEY_APP_ID, dto.getAppId().trim(), "支付宝沙箱 APPID");
         }
@@ -150,7 +168,6 @@ public class AlipayService {
         if (StringUtils.hasText(dto.getReturnUrl())) {
             configService.put(KEY_RETURN_URL, dto.getReturnUrl().trim(), "同步跳转地址");
         }
-        ChannelConfig original = previous.channel();
         ChannelConfig updated = resolve().channel();
         if (!original.equals(updated)) {
             if (original.hasKeys()) {
