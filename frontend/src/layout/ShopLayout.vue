@@ -1,48 +1,38 @@
 <template>
   <div class="shop-layout">
+    <a class="skip-link" href="#shop-content">跳到商城内容</a>
     <!-- 顶部导航 -->
     <header class="shop-header">
       <div class="header-inner">
-        <router-link to="/shop" class="shop-logo">
-          <img src="/img/logo.svg" alt="LimeMall" />
-          <span>青柠商城</span>
-        </router-link>
+        <router-link to="/shop" class="brand-lockup"><span class="brand-mark" aria-hidden="true"><el-icon><Citrus /></el-icon></span><span><strong>青柠商城</strong><small>LimeMall</small></span></router-link>
 
-        <nav class="shop-nav">
-          <router-link to="/shop" exact-active-class="active">首页</router-link>
-          <router-link to="/shop/products" active-class="active">全部商品</router-link>
-          <router-link to="/shop/coupons" active-class="active">领券中心</router-link>
-          <router-link to="/shop/points" active-class="active">积分商城</router-link>
-          <router-link to="/shop/orders" active-class="active">我的订单</router-link>
-          <router-link v-if="shopStore.token" to="/shop/member" active-class="active">会员中心</router-link>
-        </nav>
-
-        <div class="shop-search">
-          <el-autocomplete v-model="keyword" :fetch-suggestions="fetchSuggestions" :trigger-on-focus="false"
-                           placeholder="搜索商品" clearable style="width: 100%"
-                           @select="handleSelect" @keyup.enter="handleSearch">
+        <form class="shop-search" role="search" @submit.prevent="handleSearch">
+          <el-autocomplete v-model="keyword" :fetch-suggestions="fetchSuggestions" :trigger-on-focus="false" :debounce="300" select-when-unmatched
+                           placeholder="搜索商品、品牌或关键词" aria-label="搜索商品" clearable
+                           @select="handleSelect">
             <template #prefix><el-icon><Search /></el-icon></template>
             <template #default="{ item }">
               <span class="suggest-item">{{ item.value }}</span>
             </template>
           </el-autocomplete>
-        </div>
+          <button type="submit" class="search-submit">搜索</button>
+        </form>
 
         <div class="shop-actions">
-          <router-link to="/shop/cart" class="cart-link">
+          <router-link to="/shop/cart" class="cart-link" aria-label="购物车">
             <el-badge :value="cartStore.totalCount" :hidden="cartStore.totalCount === 0" :max="99">
               <el-icon :size="22"><ShoppingCart /></el-icon>
             </el-badge>
-            <span>购物车</span>
+            <span class="cart-label">购物车</span>
           </router-link>
 
           <el-dropdown v-if="shopStore.token" trigger="click" @command="handleCommand">
-            <span class="user-chip">
+            <button class="user-chip" type="button" aria-label="会员菜单">
               <el-avatar :size="30" :src="shopStore.info?.avatar || '/img/avatar.svg'" />
-              <span>{{ shopStore.info?.nickname || '会员' }}</span>
+              <span class="member-name">{{ shopStore.info?.nickname || '会员' }}</span>
               <level-badge :level="shopStore.info?.level || 1" />
               <el-icon><ArrowDown /></el-icon>
-            </span>
+            </button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item disabled>
@@ -57,22 +47,35 @@
           </el-dropdown>
           <div v-else class="auth-links">
             <router-link to="/shop/login">登录</router-link>
-            <span class="divider">|</span>
             <router-link to="/shop/login?mode=register">注册</router-link>
           </div>
         </div>
       </div>
+    <nav class="shop-nav nav-band" aria-label="商城导航">
+        <div class="nav-inner">
+          <router-link to="/shop" exact-active-class="active">首页</router-link>
+          <router-link to="/shop/products" active-class="active">全部商品</router-link>
+          <router-link to="/shop/coupons" active-class="active">领券中心</router-link>
+          <router-link to="/shop/points" active-class="active">积分商城</router-link>
+          <router-link to="/shop/orders" active-class="active">我的订单</router-link>
+          <router-link v-if="shopStore.token" to="/shop/member" active-class="active">会员中心</router-link>
+        </div>
+      </nav>
     </header>
 
     <!-- 页面内容 -->
-    <main class="shop-main">
-      <router-view />
+    <main id="shop-content" class="shop-main" tabindex="-1">
+      <router-view v-slot="{ Component }">
+        <component :is="Component" :key="checkoutViewKey" />
+      </router-view>
     </main>
 
     <!-- 页脚 -->
     <footer class="shop-footer">
-      青柠商城 LimeMall · 软件工程课程设计作品 · 后台管理入口
-      <router-link to="/admin/login" class="admin-link">管理端</router-link>
+      <div class="footer-inner">
+        <span><strong>青柠商城 LimeMall</strong>　软件工程课程设计作品</span>
+        <span><a href="/img/demo-products/SOURCES.html">商品图片来源</a><router-link to="/admin/login">管理端</router-link></span>
+      </div>
     </footer>
 
     <!-- 悬浮客服 -->
@@ -81,10 +84,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { ArrowDown, Search, ShoppingCart } from '@element-plus/icons-vue'
+import { ArrowDown, Search, ShoppingCart, Orange as Citrus } from '@element-plus/icons-vue'
 import { useShopStore } from '@/stores/shop'
 import { CART_STORAGE_KEY, useCartStore } from '@/stores/cart'
 import { searchSuggest } from '@/api/portal'
@@ -97,7 +100,9 @@ const router = useRouter()
 const shopStore = useShopStore()
 const cartStore = useCartStore()
 
+const checkoutViewKey = computed(() => route.path === '/shop/checkout' ? route.fullPath : undefined)
 const keyword = ref('')
+watch(() => route.query.name, name => { keyword.value = typeof name === "string" ? name : "" }, { immediate: true })
 
 const levelText = computed(() => MEMBER_LEVEL[shopStore.info?.level]?.text || '普通会员')
 
@@ -120,35 +125,31 @@ onMounted(async () => {
 })
 
 function handleSearch() {
-  router.push({ path: '/shop/products', query: { name: keyword.value || undefined } })
+  router.push({ path: '/shop/products', query: { name: keyword.value.trim() || undefined } })
 }
 
-let suggestTimer = null
-let suggestCallback = null
-
-/** 搜索联想：300ms 防抖，回车直接搜索、点选直达商品详情 */
-function fetchSuggestions(query, callback) {
-  if (!query) {
+let searchVersion = 0
+async function fetchSuggestions(query, callback) {
+  const version = ++searchVersion
+  const name = query.trim()
+  if (!name) {
     callback([])
     return
   }
-  suggestCallback = callback
-  clearTimeout(suggestTimer)
-  suggestTimer = setTimeout(async () => {
-    try {
-      const list = await searchSuggest(query)
-      suggestionList = (list || []).map((item) => ({ value: item.name, id: item.id }))
-      suggestCallback(suggestionList)
-    } catch (e) {
-      suggestCallback([])
-    }
-  }, 300)
+  try {
+    const list = await searchSuggest(name)
+    if (version === searchVersion) callback((list || []).map(item => ({ value: item.name, id: item.id })))
+  } catch {
+    if (version === searchVersion) callback([])
+  }
 }
 
-let suggestionList = []
-
 function handleSelect(item) {
-  router.push(`/shop/product/${item.id}`)
+  if (item.id == null) {
+    handleSearch()
+    return
+  }
+  router.push('/shop/product/' + item.id)
 }
 
 async function handleCommand(command) {
@@ -173,150 +174,50 @@ async function handleCommand(command) {
 </script>
 
 <style scoped>
-.shop-layout {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #f5f8f6;
+.shop-layout { min-height: 100dvh; display: flex; flex-direction: column; }
+.shop-header { background: var(--pine); color: var(--paper); }
+.header-inner, .nav-inner, .footer-inner { max-width: var(--shop-width); margin: 0 auto; padding-inline: var(--space-page); }
+.header-inner { display: grid; grid-template-columns: minmax(158px, .85fr) minmax(250px, 2fr) minmax(200px, .85fr); align-items: center; gap: clamp(9px, 2.5vw, 38px); padding-block: 17px; }
+.brand-lockup small { color: var(--lime); }
+.shop-search { display: flex; min-width: 0; }
+.shop-search :deep(.el-autocomplete) { flex: 1; min-width: 0; }
+.shop-search :deep(.el-input__wrapper) { border-radius: 8px 0 0 8px; box-shadow: none; min-height: 43px; }
+.shop-search :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 2px var(--focus) inset; }
+.search-submit { border: 0; border-radius: 0 8px 8px 0; min-width: 67px; background: var(--lime); color: var(--pine); font: inherit; font-weight: 750; cursor: pointer; }
+.search-submit:hover { background: #eaf5b8; }
+.shop-actions, .cart-link, .auth-links, .user-chip { display: flex; align-items: center; }
+.shop-actions { gap: clamp(8px, 1.4vw, 20px); justify-content: flex-end; }
+.cart-link, .auth-links a, .user-chip { min-height: 44px; color: var(--paper); text-decoration: none; white-space: nowrap; }
+.cart-link { gap: 7px; }
+.auth-links { gap: 9px; }
+.auth-links a { display: inline-flex; align-items: center; }
+.auth-links a:hover, .cart-link:hover { color: var(--lime); text-decoration: underline; }
+.user-chip { gap: 7px; padding: 0 6px; background: transparent; border: 0; cursor: pointer; }
+.user-chip:hover, .user-chip[aria-expanded='true'] { background: #ffffff1a; }
+.user-chip .member-name { max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-band { background: var(--paper); border-bottom: 1px solid var(--line); color: var(--ink); }
+.nav-inner { display: flex; gap: clamp(10px, 2.4vw, 30px); align-items: center; overflow-x: auto; }
+.shop-nav a { display: flex; align-items: center; min-height: 45px; border-bottom: 3px solid transparent; padding: 3px 3px 0; text-decoration: none; color: var(--muted); font-weight: 650; white-space: nowrap; }
+.shop-nav a:hover, .shop-nav a.active { color: var(--action); }
+.shop-nav a.active { border-bottom-color: var(--action); }
+.shop-main { flex: 1; width: 100%; max-width: var(--shop-width); min-width: 0; margin: 0 auto; padding: 21px var(--space-page) 58px; }
+.shop-footer { padding: 24px 0 32px; background: var(--paper); border-top: 1px solid var(--line); color: var(--muted); }
+.footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.footer-inner strong { color: var(--pine); }
+.footer-inner a { margin-left: 13px; }
+@media (max-width: 920px) {
+  .user-chip :deep(.level-badge), .user-chip .member-name { display: none; }
+  .header-inner { grid-template-columns: max-content minmax(170px, 1fr) max-content; }
 }
-
-.shop-header {
-  background: #ffffff;
-  border-bottom: 1px solid #e8efeb;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+@media (max-width: 650px) {
+  .header-inner { grid-template-columns: max-content minmax(0, 1fr); padding-block: 10px; gap: 8px; }
+  .shop-search { grid-row: 2; grid-column: 1 / -1; }
+  .shop-actions { grid-row: 1; grid-column: 2; }
+  .shop-actions :deep(.el-badge__content) { transform: translate(50%, -20%); }
+  .shop-main { padding-top: 13px; padding-bottom: 34px; }
+  .nav-inner { gap: 16px; }
+  .shop-header .brand-lockup:focus-visible, .shop-actions :focus-visible { outline-color: var(--lime); }
+  .shop-nav a { font-size: 13px; }
 }
-
-.header-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 0 16px;
-}
-
-.shop-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  color: #065f46;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  flex-shrink: 0;
-}
-
-.shop-logo img {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-}
-
-.shop-nav {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.shop-nav a {
-  padding: 8px 14px;
-  border-radius: 10px;
-  color: #374151;
-  text-decoration: none;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.shop-nav a:hover {
-  color: var(--el-color-primary);
-  background: #f0faf5;
-}
-
-.shop-nav a.active {
-  color: var(--el-color-primary);
-  font-weight: 600;
-  background: #e7f8f2;
-}
-
-.shop-search {
-  flex: 1;
-  max-width: 320px;
-}
-
-.shop-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.cart-link {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #374151;
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.cart-link:hover {
-  color: var(--el-color-primary);
-}
-
-.user-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 10px;
-  font-size: 14px;
-  color: #374151;
-}
-
-.user-chip:hover {
-  background: #f0faf5;
-}
-
-.auth-links {
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.auth-links a {
-  color: var(--el-color-primary);
-  text-decoration: none;
-}
-
-.auth-links .divider {
-  color: #d1d5db;
-}
-
-.shop-main {
-  flex: 1;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px 16px 40px;
-}
-
-.shop-footer {
-  text-align: center;
-  padding: 24px;
-  color: #9ca3af;
-  font-size: 13px;
-  border-top: 1px solid #e8efeb;
-  background: #ffffff;
-}
-
-.admin-link {
-  color: #9ca3af;
-  margin-left: 8px;
-}
+@media (max-width: 360px) { .cart-label { display: none; } .brand-lockup strong { font-size: 19px; } }
 </style>

@@ -5,7 +5,8 @@
         <span class="title">评价管理</span>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column label="商品" min-width="200">
           <template #default="{ row }">{{ row.productName }}</template>
         </el-table-column>
@@ -32,7 +33,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next" :total="total"
                        v-model:current-page="pageNum" :page-size="pageSize"
                        @current-change="load" />
@@ -42,6 +43,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -50,7 +52,9 @@ import LevelBadge from '@/components/LevelBadge.vue'
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 const total = ref(0)
 const pageNum = ref(1)
@@ -59,13 +63,18 @@ const pageSize = ref(10)
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const data = await commentPage({ pageNum: pageNum.value, pageSize: pageSize.value })
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 

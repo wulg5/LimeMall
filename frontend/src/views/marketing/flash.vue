@@ -8,7 +8,8 @@
         </el-button>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column prop="name" label="活动名称" min-width="180" />
         <el-table-column label="秒杀 SKU" width="150">
           <template #default="{ row }">#{{ row.skuId }}</template>
@@ -37,7 +38,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next" :total="total"
                        v-model:current-page="pageNum" :page-size="pageSize" @current-change="load" />
       </div>
@@ -45,7 +46,7 @@
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑秒杀' : '新增秒杀'" width="560px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
+      <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="92px">
         <el-form-item label="商品" prop="productId">
           <el-select v-model="form.productId" filterable placeholder="搜索并选择商品" style="width: 100%"
                      @change="handleProductChange">
@@ -90,6 +91,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -100,7 +102,9 @@ import { money, specsToText } from '@/utils/format'
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const saving = ref(false)
 const list = ref([])
 const total = ref(0)
@@ -128,13 +132,18 @@ onMounted(async () => {
 })
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const data = await flashPage({ pageNum: pageNum.value, pageSize: pageSize.value })
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -177,7 +186,7 @@ async function handleProductChange(productId) {
 }
 
 async function handleSave() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     const payload = {

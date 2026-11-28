@@ -1,178 +1,126 @@
 <template>
   <div class="home">
-    <!-- 促销信息条 -->
-    <div class="promo-strip">
-      <span>新人注册即领券</span><i></i>
-      <span>全场满 99 包邮</span><i></i>
-      <span>金卡 / 钻石会员全场免运费</span><i></i>
-      <span>积分商城上线：100 积分 = 1 元</span>
-    </div>
-
-    <!-- 首屏三栏：分类导航 / 轮播 / 会员卡+公告 -->
-    <div class="first-screen">
-      <aside class="category-nav">
-        <div class="nav-title">全部分类</div>
-        <div v-for="category in categories" :key="category.id" class="cat-item">
-          <router-link :to="`/shop/products?categoryId=${category.id}`" class="cat-main">
-            {{ category.name }}<span class="arrow">›</span>
+    <section class="discovery" aria-label="商城导购">
+      <nav class="categories" aria-label="商品分类">
+        <h2><el-icon><Grid /></el-icon> 全部分类</h2>
+        <div v-for="(category, index) in categories" :key="category.id" class="category">
+          <router-link :to="{ path: '/shop/products', query: { categoryId: category.id } }" class="category-main">
+            <el-icon><component :is="categoryIcons[index % categoryIcons.length]" /></el-icon>
+            <span>{{ category.name }}</span><el-icon><ArrowRight /></el-icon>
           </router-link>
-          <div class="cat-sub">
+          <div class="category-sub">
             <router-link v-for="child in (category.children || []).slice(0, 4)" :key="child.id"
-                         :to="`/shop/products?categoryId=${child.id}`">{{ child.name }}</router-link>
+                         :to="{ path: '/shop/products', query: { categoryId: child.id } }">{{ child.name }}</router-link>
           </div>
         </div>
-      </aside>
+        <router-link class="category-all" to="/shop/products">浏览全部商品 <el-icon><ArrowRight /></el-icon></router-link>
+      </nav>
 
-      <section class="banner-col">
-        <el-carousel height="318px" :interval="5000" arrow="hover" indicator-position="none">
-          <el-carousel-item v-for="banner in banners" :key="banner.id || banner.title">
-            <div class="banner" :style="{ background: bannerBg(banner) }" @click="$router.push(banner.linkUrl)">
-              <div class="banner-copy">
-                <div class="banner-tag">{{ banner.tag }}</div>
-                <h2>{{ banner.title }}</h2>
-                <p>{{ banner.subtitle }}</p>
-                <span class="banner-btn">{{ banner.ctaText }}</span>
-              </div>
-              <div class="banner-art">
-                <img :src="banner.image1" class="art art1" alt="" />
-                <img :src="banner.image2" class="art art2" alt="" />
-              </div>
-            </div>
-          </el-carousel-item>
-        </el-carousel>
-
-        <div class="quick-entry">
-          <router-link v-for="entry in quickEntries" :key="entry.text" :to="entry.link" class="entry">
-            <span class="entry-icon" :style="{ background: entry.color }">{{ entry.short }}</span>
-            <span>{{ entry.text }}</span>
-          </router-link>
-        </div>
-      </section>
-
-      <aside class="notice-col">
-        <div class="member-panel">
-          <template v-if="shopStore.token">
-            <div class="m-row">
-              <el-avatar :size="42" :src="shopStore.info?.avatar || '/img/avatar.svg'" />
-              <div class="m-info">
-                <div class="m-name">
-                  {{ shopStore.info?.nickname }}
-                  <level-badge :level="shopStore.info?.level || 1" />
-                </div>
-                <div class="m-points">积分 {{ shopStore.info?.points ?? 0 }}</div>
-              </div>
-            </div>
-            <div class="m-actions">
-              <el-button size="small" @click="$router.push('/shop/member')">会员中心</el-button>
-              <el-button size="small" type="primary" @click="$router.push('/shop/points')">积分商城</el-button>
-            </div>
-          </template>
-          <template v-else>
-            <div class="m-guest">Hi，欢迎来到青柠商城</div>
-            <div class="m-actions">
-              <el-button size="small" @click="$router.push('/shop/login?mode=register')">注册</el-button>
-              <el-button size="small" type="primary" @click="$router.push('/shop/login')">登录</el-button>
-            </div>
-          </template>
-        </div>
-
-        <div class="notice-panel">
-          <div class="notice-title">商城公告</div>
-          <ul>
-            <li v-for="notice in notices" :key="notice">{{ notice }}</li>
-          </ul>
-        </div>
-      </aside>
-    </div>
-
-    <!-- 限时特惠 / 秒杀 -->
-    <section class="floor">
-      <div class="floor-head">
-        <div class="floor-title">
-          限时特惠 <span class="floor-sub">今日好价</span>
-        </div>
-        <div class="floor-extra">
-          距本场结束 <b class="clock">{{ dealCountdown }}</b>
-        </div>
-      </div>
-      <div class="deal-grid">
-        <div v-for="item in dealItems" :key="item.key" class="deal-card"
-             @click="$router.push({ path: `/shop/product/${item.productId}`, query: { skuId: item.skuId } })">
-          <img :src="item.pic || '/img/logo.svg'" alt="" />
-          <div class="deal-info">
-            <div class="deal-name">{{ item.name }}</div>
-            <div class="deal-price">
-              <b>{{ money(item.price) }}</b>
-              <del v-if="item.originalPrice">{{ money(item.originalPrice) }}</del>
-            </div>
-            <div v-if="item.flash" class="flash-remain">秒杀进行中 · 剩 {{ remainTo(item.endTime) }}</div>
+      <div class="feature">
+        <article v-if="featuredBanner" class="feature-story" :class="{ 'feature-without-image': !featuredImages.length }">
+          <div class="feature-copy">
+            <span v-if="featuredBanner.tag" class="feature-tag">{{ featuredBanner.tag }}</span>
+            <h1><span v-for="(part, index) in titleLines" :key="index">{{ part }}</span></h1>
+            <p>{{ featuredBanner.subtitle }}</p>
+            <router-link v-if="featuredBanner.linkUrl" class="ui-link-button" :to="featuredBanner.linkUrl">
+              {{ featuredBanner.ctaText || '查看活动' }} <el-icon><ArrowRight /></el-icon>
+            </router-link>
           </div>
-          <span class="deal-off" :class="{ flash: item.flash }">{{ item.flash ? '秒杀' : '省 ' + item.save + ' 元' }}</span>
-        </div>
+          <div v-if="featuredImages.length" class="feature-media" :style="bannerAccent">
+            <product-image :src="featuredImages[0]" class="feature-primary" alt="" eager />
+            <product-image v-if="featuredImages[1]" :src="featuredImages[1]" class="feature-secondary" alt="" eager />
+          </div>
+        </article>
+        <nav v-if="banners.length > 1" class="feature-tabs" aria-label="商城活动">
+          <button v-for="(banner, index) in banners" :key="banner.id || banner.title" type="button"
+                  :aria-pressed="activeBanner === index" @click="activeBanner = index">{{ banner.tag || banner.title }}</button>
+        </nav>
       </div>
     </section>
 
-    <!-- 热销榜单 -->
-    <section class="floor">
-      <div class="floor-head">
-        <div class="floor-title">热销榜单</div>
-        <router-link class="floor-more" to="/shop/products?sort=sales">更多热销 ›</router-link>
+    <div v-if="homeError" class="home-feedback" role="alert">
+      <span>首页商品加载失败，请重试。</span><el-button :loading="loading" @click="loadHome">重新加载</el-button>
+    </div>
+    <el-skeleton v-else-if="loading" :rows="4" animated class="home-feedback" />
+
+    <section v-else class="section" aria-labelledby="offers-heading">
+      <header class="section-head">
+        <div>
+          <h2 id="offers-heading"><el-icon><Lightning /></el-icon> {{ activeDeals.length ? '限时秒杀' : '限时特惠' }}</h2>
+          <p v-if="activeDeals.length" class="countdown">最近一场结束 <b>{{ dealCountdown }}</b></p>
+          <p v-else>查看当前在售商品的优惠价</p>
+        </div>
+        <router-link class="section-link" to="/shop/products">查看全部商品 <el-icon><ArrowRight /></el-icon></router-link>
+      </header>
+      <div v-if="dealItems.length" class="deals">
+        <router-link v-for="item in dealItems" :key="item.key" class="deal"
+                     :to="{ path: '/shop/product/' + item.productId, query: { skuId: item.skuId } }">
+          <product-image :src="item.pic" class="deal-image" alt="" />
+          <div class="deal-content">
+            <span class="offer-label">{{ item.flash ? '秒杀' : '省 ' + item.save + ' 元' }}</span>
+            <h3>{{ item.name }}</h3>
+            <div class="deal-price"><strong>{{ money(item.price) }}</strong><del v-if="item.originalPrice > item.price">{{ money(item.originalPrice) }}</del></div>
+            <span v-if="item.flash" class="deal-time">结束时间 {{ dayjs(item.endTime).format('MM-DD HH:mm') }}</span>
+          </div>
+          <span class="deal-cta">去选购 <el-icon><ArrowRight /></el-icon></span>
+        </router-link>
       </div>
-      <div class="grid">
+      <p v-else class="home-feedback">当前暂无优惠商品。</p>
+    </section>
+
+    <section v-if="!loading && !homeError" class="section" aria-labelledby="hot-heading">
+      <header class="section-head">
+        <h2 id="hot-heading">热销商品</h2>
+        <router-link class="section-link" to="/shop/products?sort=sales">查看热销 <el-icon><ArrowRight /></el-icon></router-link>
+      </header>
+      <div v-if="hotProducts.length" class="product-grid">
         <product-card v-for="product in hotProducts" :key="product.id" :product="product" />
       </div>
+      <p v-else class="home-feedback">暂无热销商品。</p>
     </section>
 
-    <!-- 积分商城专区 -->
-    <section class="floor points-floor">
-      <div class="points-intro">
-        <div class="pi-title">积分商城</div>
-        <p class="pi-desc">
-          购物得积分，100 积分 = 1 元，可兑换积分专享券<br />
-          金卡会员积分 1.2 倍 · 钻石会员 1.5 倍 · 积分 12 个月滚动过期
-        </p>
-        <el-button type="primary" @click="$router.push('/shop/points')">去兑换</el-button>
+    <section class="points-section" aria-labelledby="points-heading">
+      <div>
+        <h2 id="points-heading">积分商城</h2>
+        <p>100 积分 = 1 元，可兑换积分专享券。</p>
+        <router-link class="ui-link-button" to="/shop/points">去兑换 <el-icon><ArrowRight /></el-icon></router-link>
       </div>
       <div v-if="pointsPreview.length" class="points-coupons">
-        <div v-for="coupon in pointsPreview" :key="coupon.id" class="pc" @click="$router.push('/shop/points')">
-          <div class="pc-amount">
-            <i v-if="coupon.type === 1">¥</i>{{ Number(coupon.amount) }}<i v-if="coupon.type === 2">折</i>
-          </div>
-          <div class="pc-cond">{{ Number(coupon.minAmount) > 0 ? `满 ${Number(coupon.minAmount)} 元可用` : '无门槛' }}</div>
-          <div class="pc-points">{{ coupon.pointsPrice }} 积分</div>
-        </div>
+        <router-link v-for="coupon in pointsPreview" :key="coupon.id" class="coupon" to="/shop/points">
+          <strong>{{ coupon.type === 1 ? '¥' : '' }}{{ Number(coupon.amount) }}{{ coupon.type === 2 ? '折' : '' }}</strong>
+          <span>{{ Number(coupon.minAmount) > 0 ? '满 ' + Number(coupon.minAmount) + ' 元可用' : '无门槛' }}</span>
+          <b>{{ coupon.pointsPrice }} 积分</b>
+        </router-link>
       </div>
     </section>
 
-    <!-- 新品上架 -->
-    <section class="floor">
-      <div class="floor-head">
-        <div class="floor-title">新品上架</div>
-        <router-link class="floor-more" to="/shop/products">查看全部 ›</router-link>
-      </div>
-      <div class="grid">
+    <section v-if="!loading && !homeError" class="section" aria-labelledby="new-heading">
+      <header class="section-head">
+        <h2 id="new-heading">新品上架</h2>
+        <router-link class="section-link" to="/shop/products">查看全部 <el-icon><ArrowRight /></el-icon></router-link>
+      </header>
+      <div v-if="newProducts.length" class="product-grid">
         <product-card v-for="product in newProducts" :key="product.id" :product="product" />
       </div>
+      <p v-else class="home-feedback">暂无新品。</p>
+    </section>
+
+    <section v-if="notices.length" class="shop-notices" aria-labelledby="notices-heading">
+      <h2 id="notices-heading">商城公告</h2>
+      <ul><li v-for="(notice, index) in notices" :key="index">{{ notice }}</li></ul>
     </section>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ArrowRight, Apple, Box, Cpu, Goods, Grid, Lightning, MagicStick } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
-import {
-  getBanners,
-  getExchangeCoupons,
-  getFlashSales,
-  getHome,
-  getNotices
-} from '@/api/portal'
-import { useShopStore } from '@/stores/shop'
+import { getBanners, getExchangeCoupons, getFlashSales, getHome, getNotices } from '@/api/portal'
 import { money } from '@/utils/format'
+import { PRODUCT_PLACEHOLDER, productImageSource } from '@/utils/productImages'
 import ProductCard from '@/components/ProductCard.vue'
-import LevelBadge from '@/components/LevelBadge.vue'
-
-const shopStore = useShopStore()
+import ProductImage from '@/components/ProductImage.vue'
 
 const categories = ref([])
 const hotProducts = ref([])
@@ -181,56 +129,40 @@ const exchangeCoupons = ref([])
 const flashSales = ref([])
 const notices = ref([])
 const banners = ref([])
+const activeBanner = ref(0)
+const loading = ref(true)
+const homeError = ref(false)
 const nowTs = ref(Date.now())
-let timer = null
+const categoryIcons = [Cpu, Goods, Apple, MagicStick, Box]
+let timer
 
-/** 轮播默认值（接口无数据时的兜底，保证离线演示） */
-const DEFAULT_BANNERS = [
-  {
-    id: 'd1', tag: '数码焕新', title: '轻装出行 · 桌面焕新',
-    subtitle: '充电器 / 阅读器 / 键鼠周边，精选好物满 99 包邮',
-    ctaText: '立即选购', linkUrl: '/shop/products?categoryId=1',
-    bgFrom: '#0b3d33', bgTo: '#0d9488',
-    image1: '/img/products/p02.svg', image2: '/img/products/p03.svg'
-  },
-  {
-    id: 'd2', tag: '积分商城', title: '积分当钱花',
-    subtitle: '100 积分抵 1 元，全场优惠券持续兑换中',
-    ctaText: '去兑换', linkUrl: '/shop/points',
-    bgFrom: '#7c2d12', bgTo: '#d97706',
-    image1: '/img/products/p18.svg', image2: '/img/products/p21.svg'
-  },
-  {
-    id: 'd3', tag: '会员权益', title: '金卡 / 钻石全场免运费',
-    subtitle: '购物累计成长值，等级自动升级，积分加速获取',
-    ctaText: '查看会员权益', linkUrl: '/shop/member',
-    bgFrom: '#1e1b4b', bgTo: '#6366f1',
-    image1: '/img/products/p17.svg', image2: '/img/products/p26.svg'
+const fallbackBanner = {
+  title: '青柠商城',
+  subtitle: '按分类探索数码、服饰、美食与居家日用。',
+  ctaText: '浏览商品',
+  linkUrl: '/shop/products'
+}
+
+const featuredBanner = computed(() => banners.value[activeBanner.value] || fallbackBanner)
+const titleLines = computed(() => (featuredBanner.value.title || '青柠商城').split(' · '))
+const featuredImages = computed(() => [...new Set([featuredBanner.value.image1, featuredBanner.value.image2])]
+  .filter(source => source && productImageSource(source) !== PRODUCT_PLACEHOLDER))
+const bannerAccent = computed(() => {
+  const safeColor = value => /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(value || '')
+  const { bgFrom, bgTo } = featuredBanner.value
+  return {
+    '--banner-from': safeColor(bgFrom) ? bgFrom : 'var(--pine)',
+    '--banner-to': safeColor(bgTo) ? bgTo : 'var(--action)'
   }
-]
-
-const DEFAULT_NOTICES = [
-  '全场满 99 元包邮，金卡及以上会员无门槛免运费',
-  '支持 7 天无理由退款，退款审核 24 小时内处理',
-  '客服在线 9:00 - 21:00，点击右下角悬浮窗咨询'
-]
-
-const quickEntries = [
-  { short: '券', text: '领券中心', color: '#dc2626', link: '/shop/coupons' },
-  { short: '积', text: '积分商城', color: '#d97706', link: '/shop/points' },
-  { short: '单', text: '我的订单', color: '#0d9488', link: '/shop/orders' },
-  { short: '会', text: '会员中心', color: '#4338ca', link: '/shop/member' }
-]
-
+})
 const activeDeals = computed(() => flashSales.value
   .filter(flash => dayjs(flash.endTime).valueOf() > nowTs.value)
   .slice(0, 4))
 
-/** 优先展示当前生效的秒杀，否则展示热销商品折扣。 */
 const dealItems = computed(() => {
   if (activeDeals.value.length) {
-    return activeDeals.value.map((flash) => ({
-      key: `f-${flash.id}`,
+    return activeDeals.value.map(flash => ({
+      key: 'f-' + flash.id,
       flash: true,
       productId: flash.productId,
       skuId: flash.skuId,
@@ -238,17 +170,15 @@ const dealItems = computed(() => {
       pic: flash.mainPic,
       price: Number(flash.flashPrice),
       originalPrice: Number(flash.originalPrice),
-      endTime: flash.endTime,
-      save: 0
+      endTime: flash.endTime
     }))
   }
   return [...hotProducts.value]
     .filter(product => product.stock > 0 && discountOf(product) > 0)
-    .sort((a, b) => discountOf(b) - discountOf(a))
+    .sort((first, second) => discountOf(second) - discountOf(first))
     .slice(0, 4)
-    .map((product) => ({
-      key: `p-${product.id}`,
-      flash: false,
+    .map(product => ({
+      key: 'p-' + product.id,
       productId: product.id,
       name: product.name,
       pic: product.mainPic,
@@ -258,607 +188,137 @@ const dealItems = computed(() => {
     }))
 })
 
-/** 秒杀场次倒计时（取最近结束的一场；无秒杀时倒计时到当日 24:00） */
 const dealCountdown = computed(() => {
-  let endTs
-  if (activeDeals.value.length) {
-    endTs = Math.min(...activeDeals.value.map(flash => dayjs(flash.endTime).valueOf()))
-  } else {
-    endTs = dayjs(nowTs.value).endOf('day').valueOf()
-  }
-  return formatRemain(endTs - nowTs.value)
+  const end = Math.min(...activeDeals.value.map(flash => dayjs(flash.endTime).valueOf()))
+  const seconds = Math.max(0, Math.floor((end - nowTs.value) / 1000))
+  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
+    .map(value => String(value).padStart(2, '0')).join(':')
 })
 
 const pointsPreview = computed(() => exchangeCoupons.value.slice(0, 3))
-
-function bannerBg(banner) {
-  return `linear-gradient(105deg, ${banner.bgFrom || '#0b3d33'} 0%, ${banner.bgTo || '#0d9488'} 100%)`
-}
 
 function offerPrice(product) {
   return Number(product.displayPrice ?? product.price ?? 0)
 }
 
 function discountOf(product) {
-  const original = Number(product.originalPrice || 0)
-  const price = offerPrice(product)
-  return original > price ? (original - price).toFixed(0) : 0
+  return Math.max(0, Number(product.originalPrice || 0) - offerPrice(product)).toFixed(0)
 }
 
-function formatRemain(diff) {
-  const clamped = Math.max(0, diff)
-  const hours = String(Math.floor(clamped / 3600000)).padStart(2, '0')
-  const minutes = String(Math.floor((clamped % 3600000) / 60000)).padStart(2, '0')
-  const seconds = String(Math.floor((clamped % 60000) / 1000)).padStart(2, '0')
-  return `${hours}:${minutes}:${seconds}`
-}
-
-function remainTo(endTime) {
-  return formatRemain(dayjs(endTime).valueOf() - nowTs.value)
-}
-
-onMounted(async () => {
-  const [homeData, bannerData, noticeData, flashData, coupons] = await Promise.all([
-    getHome(),
-    getBanners().catch(() => []),
-    getNotices().catch(() => []),
-    getFlashSales().catch(() => []),
-    getExchangeCoupons().catch(() => [])
+async function loadHome() {
+  loading.value = true
+  homeError.value = false
+  const [home, banner, notice, flash, coupons] = await Promise.allSettled([
+    getHome(), getBanners(), getNotices(), getFlashSales(), getExchangeCoupons()
   ])
-  categories.value = homeData.categories || []
-  hotProducts.value = homeData.hotProducts || []
-  newProducts.value = homeData.newProducts || []
-  banners.value = bannerData.length ? bannerData : DEFAULT_BANNERS
-  notices.value = noticeData.length ? noticeData.map((notice) => notice.content) : DEFAULT_NOTICES
-  flashSales.value = flashData || []
-  exchangeCoupons.value = coupons
-  timer = setInterval(() => { nowTs.value = Date.now() }, 1000)
-})
+  if (home.status === 'fulfilled') {
+    categories.value = home.value?.categories || []
+    hotProducts.value = home.value?.hotProducts || []
+    newProducts.value = home.value?.newProducts || []
+  } else {
+    homeError.value = true
+  }
+  if (banner.status === 'fulfilled') {
+    banners.value = banner.value || []
+    activeBanner.value = 0
+  }
+  if (notice.status === 'fulfilled') notices.value = (notice.value || []).map(item => item.content)
+  if (flash.status === 'fulfilled') flashSales.value = flash.value || []
+  if (coupons.status === 'fulfilled') exchangeCoupons.value = coupons.value || []
+  loading.value = false
+}
 
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
+onMounted(() => {
+  loadHome()
+  timer = window.setInterval(() => { nowTs.value = Date.now() }, 1000)
 })
+onBeforeUnmount(() => window.clearInterval(timer))
 </script>
 
 <style scoped>
-.home {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* 顶部促销条 */
-.promo-strip {
-  background: #ffffff;
-  border: 1px solid #eef2f0;
-  border-radius: 10px;
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 12.5px;
-  color: #6b7280;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.promo-strip i {
-  width: 1px;
-  height: 12px;
-  background: #e5e7eb;
-}
-
-/* 首屏 */
-.first-screen {
-  display: grid;
-  grid-template-columns: 212px 1fr 252px;
-  gap: 14px;
-}
-
-.category-nav {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 10px 0;
-  border: 1px solid #eef2f0;
-}
-
-.nav-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-  padding: 4px 16px 10px;
-  border-bottom: 1px solid #f5f8f6;
-}
-
-.cat-item {
-  padding: 7px 16px;
-  transition: background 0.15s;
-}
-
-.cat-item:hover {
-  background: #f6faf8;
-}
-
-.cat-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #1f2937;
-  font-size: 13.5px;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.cat-main:hover {
-  color: var(--el-color-primary);
-}
-
-.cat-main .arrow {
-  color: #c3ccc8;
-  font-size: 14px;
-}
-
-.cat-sub {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 4px;
-}
-
-.cat-sub a {
-  font-size: 12px;
-  color: #9ca3af;
-  text-decoration: none;
-}
-
-.cat-sub a:hover {
-  color: var(--el-color-primary);
-}
-
-/* 轮播 */
-.banner-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-
-.banner {
-  height: 100%;
-  border-radius: 12px;
-  padding: 36px 38px;
-  color: #ffffff;
-  display: flex;
-  justify-content: space-between;
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
-}
-
-.banner-copy {
-  position: relative;
-  z-index: 2;
-  max-width: 60%;
-}
-
-.banner-tag {
-  display: inline-block;
-  font-size: 12px;
-  padding: 3px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 999px;
-  margin-bottom: 16px;
-  letter-spacing: 1px;
-}
-
-.banner h2 {
-  font-size: 30px;
-  margin: 0 0 12px;
-  letter-spacing: 1px;
-}
-
-.banner p {
-  font-size: 13.5px;
-  opacity: 0.85;
-  margin: 0 0 22px;
-  line-height: 1.7;
-}
-
-.banner-btn {
-  display: inline-block;
-  background: #ffffff;
-  color: #14532d;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 9px 22px;
-  border-radius: 8px;
-  transition: transform 0.2s;
-}
-
-.banner:hover .banner-btn {
-  transform: translateX(3px);
-}
-
-.banner-art {
-  position: absolute;
-  right: 26px;
-  top: 0;
-  bottom: 0;
-  width: 280px;
-}
-
-.art {
-  position: absolute;
-  width: 150px;
-  height: 150px;
-  border-radius: 14px;
-  border: 4px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
-}
-
-.art1 {
-  top: 42px;
-  left: 10px;
-  transform: rotate(-7deg);
-}
-
-.art2 {
-  top: 108px;
-  left: 118px;
-  transform: rotate(6deg);
-}
-
-.quick-entry {
-  background: #ffffff;
-  border: 1px solid #eef2f0;
-  border-radius: 12px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  padding: 10px 6px;
-}
-
-.entry {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #374151;
-  text-decoration: none;
-  font-size: 13px;
-  padding: 6px 0;
-}
-
-.entry:hover {
-  color: var(--el-color-primary);
-}
-
-.entry-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 右侧 */
-.notice-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.member-panel {
-  background: #ffffff;
-  border: 1px solid #eef2f0;
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.m-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.m-info {
-  min-width: 0;
-}
-
-.m-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.m-points {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 4px;
-}
-
-.m-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.m-actions .el-button {
-  flex: 1;
-}
-
-.m-guest {
-  font-size: 14px;
-  color: #374151;
-}
-
-.notice-panel {
-  flex: 1;
-  background: #ffffff;
-  border: 1px solid #eef2f0;
-  border-radius: 12px;
-  padding: 14px 16px;
-}
-
-.notice-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 10px;
-}
-
-.notice-panel ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.notice-panel li {
-  font-size: 12.5px;
-  color: #6b7280;
-  line-height: 1.7;
-  padding: 6px 0;
-  border-bottom: 1px dashed #f1f5f3;
-}
-
-.notice-panel li:last-child {
-  border-bottom: none;
-}
-
-/* 楼层 */
-.floor {
-  background: #ffffff;
-  border: 1px solid #eef2f0;
-  border-radius: 12px;
-  padding: 18px 20px;
-}
-
-.floor-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.floor-title {
-  font-size: 19px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.floor-sub {
-  font-size: 12.5px;
-  font-weight: 400;
-  color: #9ca3af;
-  margin-left: 10px;
-}
-
-.floor-extra {
-  font-size: 12.5px;
-  color: #9ca3af;
-}
-
-.clock {
-  color: #dc2626;
-  font-family: Consolas, monospace;
-  font-size: 15px;
-  margin-left: 4px;
-}
-
-.floor-more {
-  font-size: 13px;
-  color: #9ca3af;
-  text-decoration: none;
-}
-
-.floor-more:hover {
-  color: var(--el-color-primary);
-}
-
-/* 限时特惠 */
-.deal-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.deal-card {
-  position: relative;
-  border: 1px solid #f1f5f3;
-  border-radius: 12px;
-  padding: 12px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.deal-card:hover {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.12);
-}
-
-.deal-card img {
-  width: 76px;
-  height: 76px;
-  border-radius: 10px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.deal-info {
-  min-width: 0;
-}
-
-.deal-name {
-  font-size: 13px;
-  color: #1f2937;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 150px;
-}
-
-.deal-price {
-  margin-top: 8px;
-}
-
-.deal-price b {
-  color: #dc2626;
-  font-size: 17px;
-}
-
-.deal-price del {
-  color: #c3ccc8;
-  font-size: 12px;
-  margin-left: 6px;
-}
-
-.flash-remain {
-  font-size: 11px;
-  color: #dc2626;
-  margin-top: 4px;
-}
-
-.deal-off {
-  position: absolute;
-  top: 0;
-  left: 0;
-  background: #dc2626;
-  color: #ffffff;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 12px 0 10px 0;
-}
-
-.deal-off.flash {
-  background: #b91c1c;
-}
-
-/* 商品网格 */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-/* 积分商城专区 */
-.points-floor {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  background: linear-gradient(100deg, #fffbeb, #ffffff 55%);
-}
-
-.points-intro {
-  flex: 1;
-}
-
-.pi-title {
-  font-size: 21px;
-  font-weight: 700;
-  color: #92400e;
-}
-
-.pi-desc {
-  font-size: 13px;
-  color: #78716c;
-  line-height: 1.8;
-  margin: 10px 0 16px;
-}
-
-.points-coupons {
-  display: flex;
-  gap: 14px;
-}
-
-.pc {
-  width: 132px;
-  height: 96px;
-  border: 1px dashed #f59e0b;
-  background: #fffbeb;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.pc:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 18px rgba(217, 119, 6, 0.18);
-}
-
-.pc-amount {
-  font-size: 27px;
-  font-weight: 700;
-  color: #dc2626;
-}
-
-.pc-amount i {
-  font-size: 14px;
-  font-style: normal;
-}
-
-.pc-cond {
-  font-size: 11.5px;
-  color: #9ca3af;
-}
-
-.pc-points {
-  font-size: 12px;
-  color: #d97706;
-  font-weight: 600;
-}
-
-@media (max-width: 1000px) {
-  .first-screen {
-    grid-template-columns: 1fr;
-  }
-
-  .category-nav,
-  .notice-col {
-    display: none;
-  }
-
-  .grid,
-  .deal-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .points-floor {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.home { display: grid; gap: clamp(31px, 3.4vw, 49px); }
+.discovery { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; }
+.categories { display: flex; flex-direction: column; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: 18px 16px 12px; }
+.categories h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; padding: 0 6px 13px; font-size: 16px; border-bottom: 1px solid var(--line); }
+.category { padding: 7px 6px; border-radius: 8px; }
+.category:hover, .category:focus-within { background: var(--page); }
+.category-main, .category-all { display: flex; align-items: center; gap: 8px; font-weight: 650; text-decoration: none; color: var(--pine); }
+.category-main span { flex: 1; }
+.category-main > .el-icon:first-child { color: var(--action); font-size: 17px; }
+.category-main > .el-icon:last-child { color: var(--muted); font-size: 12px; }
+.category-sub { margin: 4px 0 0 25px; display: flex; flex-wrap: wrap; gap: 3px 8px; }
+.category-sub a { font-size: 12px; color: var(--muted); text-decoration: none; }
+.category-sub a:hover { text-decoration: underline; color: var(--pine); }
+.category-all { margin-top: auto; font-size: 13px; padding: 10px 6px 2px; }
+.feature { min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: clip; background: var(--paper); }
+.feature-story { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); flex: 1; min-height: 316px; background: var(--lime); }
+.feature-copy { padding: clamp(25px, 3.1vw, 44px) clamp(26px, 4.2vw, 62px); align-self: center; min-width: 0; }
+.feature-tag { display: inline-block; font-weight: 700; color: var(--pine); padding-bottom: 4px; border-bottom: 2px solid currentColor; font-size: 13px; }
+.feature h1 { font-size: clamp(34px, 4.2vw, 57px); line-height: 1.08; margin: 15px 0 12px; color: var(--pine); letter-spacing: -.055em; text-wrap: balance; }
+.feature h1 span { display: block; }
+.feature p { line-height: 1.65; margin: 0 0 24px; max-width: 32ch; color: var(--pine); }
+.feature-media { min-width: 0; position: relative; background: linear-gradient(120deg, var(--banner-from), var(--banner-to)); }
+.feature-primary { width: 100%; height: 100%; position: absolute; object-fit: cover; object-position: 72% center; }
+.feature-secondary { position: absolute; right: 4%; bottom: 5%; width: 32%; height: 38%; object-fit: cover; border: 3px solid var(--banner-to); border-radius: 8px; }
+.feature-media:has(.feature-secondary) .feature-primary { height: 99%; width: 98%; }
+.feature-without-image { grid-template-columns: 1fr; }
+.feature-tabs { display: flex; gap: 20px; padding: 0 22px; min-height: 47px; overflow-x: auto; }
+.feature-tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 1px 5px; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.feature-tabs button[aria-pressed='true'] { color: var(--pine); border-bottom-color: var(--action); }
+.section-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding: 0 0 15px; margin-bottom: 15px; border-bottom: 1px solid var(--line); }
+.section-head h2, .points-section h2 { margin: 0; font-size: clamp(23px, 2.6vw, 33px); color: var(--pine); letter-spacing: -.035em; }
+.section-head h2 .el-icon { color: var(--price); vertical-align: -.1em; }
+.section-head p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.countdown b { margin-left: 5px; color: var(--price); font-variant-numeric: tabular-nums; }
+.section-link, .deal-cta { display: inline-flex; gap: 5px; align-items: center; color: var(--action); font-weight: 650; font-size: 13px; text-decoration: none; white-space: nowrap; }
+.section-link:hover, .deal:hover .deal-cta { text-decoration: underline; }
+.deals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.deal { display: grid; grid-template-columns: 108px 1fr auto; align-items: center; gap: 15px; min-width: 0; padding: 10px 14px 10px 10px; background: var(--paper); border-radius: var(--radius-panel); border: 1px solid var(--line); color: inherit; text-decoration: none; }
+.deal:hover { border-color: var(--action); }
+.deal-image { width: 108px; height: 108px; object-fit: cover; border-radius: 7px; background: var(--page); }
+.deal h3 { margin: 4px 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.offer-label { font-size: 12px; font-weight: 700; color: var(--price); }
+.deal-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; }
+.deal-price strong { color: var(--price); font-size: 22px; font-variant-numeric: tabular-nums; }
+.deal-price del, .deal-time { color: var(--muted); font-size: 12px; }
+.product-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.points-section { display: grid; grid-template-columns: minmax(200px, .8fr) minmax(0, 1.2fr); align-items: center; gap: 18px; background: var(--soft-green); color: var(--pine); padding: clamp(18px, 4vw, 42px); border-radius: var(--radius-panel); }
+.points-section p { margin: 9px 0 16px; }
+.points-coupons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.coupon { display: grid; gap: 4px; border-radius: 8px; padding: 12px; color: var(--pine); background: var(--paper); text-decoration: none; border: 1px solid var(--line); }
+.coupon:hover { border-color: var(--action); }
+.coupon strong { font-size: 23px; color: var(--price); }
+.coupon span, .coupon b { font-size: 12px; }
+.shop-notices { border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.shop-notices h2 { font-size: 16px; color: var(--pine); }
+.shop-notices ul { display: flex; flex-wrap: wrap; column-gap: 30px; padding-left: 18px; }
+.home-feedback { padding: 20px; margin: 0; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--paper); color: var(--muted); }
+.home-feedback .el-button { margin-left: 12px; }
+@media (max-width: 980px) {
+  .deal { grid-template-columns: 80px 1fr; }
+  .deal-image { width: 80px; height: 88px; }
+  .deal-cta { grid-column: 2; }
+}
+@media (max-width: 760px) {
+  .discovery { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .categories { grid-row: 2; flex-direction: row; gap: 8px; overflow-x: auto; padding: 8px; }
+  .categories h2, .category-sub, .category-main > .el-icon:last-child { display: none; }
+  .category { padding: 0; }
+  .category-main, .category-all { gap: 5px; padding: 9px 8px; min-height: 42px; white-space: nowrap; }
+  .category-all { margin: 0; }
+  .feature-story { min-height: 230px; }
+  .feature-copy { padding: 20px 14px 20px 18px; }
+  .feature h1 { font-size: clamp(24px, 6.5vw, 42px); margin-top: 10px; }
+  .feature p { font-size: 12px; margin-bottom: 15px; }
+  .feature-tabs { padding-inline: 12px; gap: 15px; }
+  .feature-secondary { width: 42%; height: 32%; }
+  .section-head { align-items: start; }
+  .deals { grid-template-columns: 1fr; }
+  .deal { grid-template-columns: 72px minmax(0, 1fr) auto; gap: 8px; }
+  .deal-image { width: 72px; height: 78px; }
+  .deal-cta { grid-column: auto; }
+  .deal-cta .el-icon { display: none; }
+  .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .points-section { grid-template-columns: 1fr; }
 }
 </style>

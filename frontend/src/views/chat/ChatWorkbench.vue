@@ -12,38 +12,38 @@
         <div class="list-scroll">
           <!-- 待接入 / 我的会话 -->
           <template v-if="tab !== 'history'">
-            <div v-for="session in currentList" :key="session.id" class="session-item"
-                 :class="{ active: active && active.id === session.id }" @click="openSession(session)">
+            <button type="button" v-for="session in currentList" :key="session.id" class="session-item"
+                 :class="{ active: active && active.id === session.id }" :aria-pressed="active?.id === session.id" @click="openSession(session)">
               <el-avatar :size="36" :src="session.memberAvatar || '/img/avatar.svg'" />
-              <div class="s-info">
-                <div class="s-name">
+              <span class="s-info">
+                <span class="s-name">
                   {{ session.memberNickname || session.memberUsername }}
                   <el-badge v-if="session.unreadCount > 0" :value="session.unreadCount" :max="99" class="s-badge" />
-                </div>
-                <div class="s-last">{{ session.lastContent || '（暂无消息）' }}</div>
-              </div>
-              <div class="s-time">{{ formatTime(session.lastMessageTime) }}</div>
-            </div>
+                </span>
+                <span class="s-last">{{ session.lastContent || '（暂无消息）' }}</span>
+              </span>
+              <span class="s-time">{{ formatTime(session.lastMessageTime) }}</span>
+            </button>
             <el-empty v-if="!currentList.length"
                       :description="tab === 'queue' ? '暂无待接入会话' : '你还没有接待中的会话'" :image-size="70" />
           </template>
 
           <!-- 历史记录 -->
           <template v-else>
-            <div v-for="session in historyList" :key="session.id" class="session-item"
-                 :class="{ active: active && active.id === session.id }" @click="openSession(session)">
+            <button type="button" v-for="session in historyList" :key="session.id" class="session-item"
+                 :class="{ active: active && active.id === session.id }" :aria-pressed="active?.id === session.id" @click="openSession(session)">
               <el-avatar :size="36" :src="session.memberAvatar || '/img/avatar.svg'" />
-              <div class="s-info">
-                <div class="s-name">
+              <span class="s-info">
+                <span class="s-name">
                   {{ session.memberNickname || session.memberUsername }}
                   <el-tag size="small" :type="session.status === 0 ? 'success' : 'info'" class="s-tag">
                     {{ session.status === 0 ? '进行中' : '已结束' }}
                   </el-tag>
-                </div>
-                <div class="s-last">客服：{{ session.agentNickname || '未接入' }}</div>
-              </div>
-              <div class="s-time">{{ formatTime(session.lastMessageTime) }}</div>
-            </div>
+                </span>
+                <span class="s-last">客服：{{ session.agentNickname || '未接入' }}</span>
+              </span>
+              <span class="s-time">{{ formatTime(session.lastMessageTime) }}</span>
+            </button>
             <el-empty v-if="!historyList.length" description="暂无历史会话" :image-size="70" />
             <div class="history-pager">
               <el-pagination small layout="prev, pager, next" :total="historyTotal"
@@ -76,7 +76,7 @@
             </div>
           </div>
 
-          <div ref="threadRef" class="thread">
+          <div ref="threadRef" class="thread" role="log" aria-label="会话消息">
             <el-button v-if="hasOlder" link type="primary" :loading="loadingOlder" @click="loadOlderMessages">加载更早消息</el-button>
             <div v-if="!messages.length" class="thread-empty">暂无消息</div>
             <div v-for="msg in messages" :key="msg.id" class="thread-msg"
@@ -89,7 +89,7 @@
           <div class="reply-bar">
             <template v-if="canSend">
               <el-input v-model="draft" type="textarea" :rows="2" maxlength="500" resize="none"
-                        placeholder="输入回复内容（Ctrl + Enter 发送）" @keydown.ctrl.enter="handleSend" />
+                        aria-label="客服回复" placeholder="输入回复内容（Ctrl + Enter 发送）" @keydown.ctrl.enter="handleSend" />
               <el-button type="primary" :loading="sending" :disabled="!draft.trim()" @click="handleSend">
                 发送回复
               </el-button>
@@ -510,5 +510,23 @@ async function handleSend() {
   background: #f8faf9;
   border-radius: 10px;
   padding: 0 16px;
+}
+
+.chat-card { height: max(520px, calc(100dvh - 157px)); border: 1px solid var(--line); border-radius: var(--radius-panel); box-shadow: none; }
+.side { flex: 0 0 clamp(225px, 25%, 290px); }
+.session-item { width: 100%; padding: 10px; color: var(--ink); font: inherit; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 7px; }
+.session-item.active { border-color: #c8dbcb; background: var(--soft-green); }
+.session-item:hover { background: var(--page); }
+.session-item:focus-visible { outline-offset: -2px; }
+.s-info, .s-last { display: block; }
+.thread { background: var(--page); }
+.thread-msg.mine .bubble { color: var(--pine); background: var(--soft-green); }
+.bubble { overflow-wrap: anywhere; }
+.main-header, .mh-left { flex-wrap: wrap; gap: 6px; }
+@media (max-width: 660px) {
+  .chat-card { height: auto; display: block; }
+  .side { width: 100%; height: 220px; }
+  .thread { min-height: 260px; max-height: 45dvh; }
+  .main-header { padding: 8px; }
 }
 </style>

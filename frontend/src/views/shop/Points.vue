@@ -63,7 +63,8 @@
           </el-button>
         </div>
       </div>
-      <el-empty v-if="!coupons.length" description="暂无可兑换的优惠券" />
+      <load-state v-if="exchangeLoading || exchangeError" :loading="exchangeLoading" :error="exchangeError" @retry="loadExchangeCoupons" />
+      <el-empty v-else-if="!coupons.length" description="暂无可兑换的优惠券" />
     </div>
 
     <div class="rule-card">
@@ -80,7 +81,8 @@
 
       <el-tab-pane label="积分明细" name="records">
         <div class="record-card">
-          <el-table v-loading="recordsLoading" :data="records">
+          <load-state v-if="recordsError" :error="recordsError" @retry="loadRecords" />
+          <el-table v-else v-loading="recordsLoading" :data="records" :empty-text="recordsLoading ? '正在加载…' : '暂无积分明细'">
             <el-table-column prop="createTime" label="时间" width="170" />
             <el-table-column label="类型" width="100">
               <template #default="{ row }">
@@ -124,6 +126,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -151,6 +154,9 @@ const records = ref([])
 const recordsTotal = ref(0)
 const recordsPage = ref(1)
 const recordsLoading = ref(false)
+const recordsError = ref(false)
+const exchangeLoading = ref(true)
+const exchangeError = ref(false)
 
 watch(() => shopStore.info?.id, syncPendingExchanges, { immediate: true })
 onUnmounted(() => window.removeEventListener('storage', syncPendingExchanges))
@@ -164,7 +170,7 @@ onMounted(async () => {
       /* 拦截器处理 */
     }
   }
-  coupons.value = await getExchangeCoupons()
+  await loadExchangeCoupons()
   if (shopStore.token) {
     await loadRecords()
   }
@@ -176,12 +182,27 @@ function handleTabChange(name) {
   }
 }
 
+async function loadExchangeCoupons() {
+  exchangeLoading.value = true
+  exchangeError.value = false
+  try {
+    coupons.value = await getExchangeCoupons()
+  } catch {
+    exchangeError.value = true
+  } finally {
+    exchangeLoading.value = false
+  }
+}
+
 async function loadRecords() {
   recordsLoading.value = true
+  recordsError.value = false
   try {
     const data = await getPointsRecords({ pageNum: recordsPage.value, pageSize: 10 })
     records.value = data.records
     recordsTotal.value = data.total
+  } catch {
+    recordsError.value = true
   } finally {
     recordsLoading.value = false
   }
@@ -484,4 +505,19 @@ async function submitExchange(key, coupon) {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+.points-header { background: var(--pine); border-radius: var(--radius-panel); }
+.points-header .ph-copy h1 { color: var(--paper); }
+.ex-card, .record-card, .rule-card { min-width: 0; border: 1px solid var(--line); box-shadow: none; }
+.ex-footer { flex-wrap: wrap; }
+@media (max-width: 620px) {
+  .points-header { display: grid; gap: 14px; padding: 16px; }
+  .balance-card { min-width: 0; margin: 0; }
+  .coupon-grid { gap: 8px; }
+  .ex-card { padding: 10px; }
+  .ex-footer .el-button { width: 100%; }
+  .record-card { padding: 10px; }
+}
+
+.coupon-grid > :is(.load-state, .el-empty) { grid-column: 1 / -1; }
 </style>

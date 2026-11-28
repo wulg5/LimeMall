@@ -1,6 +1,7 @@
 <template>
   <div class="page-container">
-    <div class="page-card">
+    <load-state v-if="loading || configError" :loading="loading" :error="configError" @retry="load" />
+    <div v-else class="page-card">
       <div class="table-toolbar">
         <span class="title">支付配置（支付宝沙箱）</span>
       </div>
@@ -72,11 +73,14 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPayConfig, savePayConfig } from '@/api/config'
 
 const config = ref(null)
+const configError = ref(false)
+const loading = ref(true)
 const saving = ref(false)
 const formRef = ref()
 
@@ -99,14 +103,22 @@ const modeText = computed(() => ({
 onMounted(load)
 
 async function load() {
-  config.value = await getPayConfig()
-  form.enabled = !!config.value.enabled
-  form.appId = config.value.appId || ''
-  form.gatewayUrl = config.value.gatewayUrl || ''
-  form.notifyUrl = config.value.notifyUrl || ''
-  form.returnUrl = config.value.returnUrl || ''
-  form.merchantPrivateKey = ''
-  form.alipayPublicKey = ''
+  loading.value = true
+  configError.value = false
+  try {
+    config.value = await getPayConfig()
+    form.enabled = !!config.value.enabled
+    form.appId = config.value.appId || ''
+    form.gatewayUrl = config.value.gatewayUrl || ''
+    form.notifyUrl = config.value.notifyUrl || ''
+    form.returnUrl = config.value.returnUrl || ''
+    form.merchantPrivateKey = ''
+    form.alipayPublicKey = ''
+  } catch {
+    configError.value = true
+  } finally {
+    loading.value = false
+  }
 }
 
 async function handleSave() {

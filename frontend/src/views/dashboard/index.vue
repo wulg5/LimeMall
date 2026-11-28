@@ -1,8 +1,9 @@
 <template>
   <div class="page-container dashboard">
+    <load-state :loading="loading" :error="dashboardError" message="部分经营数据加载失败。" @retry="loadDashboard" />
     <!-- 顶部统计卡片 -->
     <el-row :gutter="16">
-      <el-col v-for="card in statCards" :key="card.label" :span="6">
+      <el-col v-for="card in statCards" :key="card.label" :xs="12" :md="6">
         <div class="stat-card">
           <div class="icon-wrap" :style="{ background: card.bg }">
             <el-icon><component :is="card.icon" /></el-icon>
@@ -17,31 +18,31 @@
 
     <!-- 待办提醒 -->
     <el-row :gutter="16">
-      <el-col :span="12">
-        <div class="todo-banner" @click="$router.push('/admin/order/list?status=1')">
+      <el-col :xs="24" :sm="12">
+        <router-link class="todo-banner" to="/admin/order/list?status=1">
           <el-icon class="todo-icon" color="#d97706"><Van /></el-icon>
           <span>待发货订单</span>
           <b class="todo-num">{{ summary.pendingDeliverCount ?? 0 }}</b>
-          <span class="todo-link">去处理 &gt;</span>
-        </div>
+          <span class="todo-link">去处理 ›</span>
+        </router-link>
       </el-col>
-      <el-col :span="12">
-        <div class="todo-banner" @click="$router.push('/admin/order/return')">
+      <el-col :xs="24" :sm="12">
+        <router-link class="todo-banner" to="/admin/order/return?status=0">
           <el-icon class="todo-icon" color="#dc2626"><RefreshLeft /></el-icon>
           <span>待审核退款</span>
           <b class="todo-num">{{ summary.pendingReturnCount ?? 0 }}</b>
-          <span class="todo-link">去处理 &gt;</span>
-        </div>
+          <span class="todo-link">去处理 ›</span>
+        </router-link>
       </el-col>
     </el-row>
 
     <!-- 趋势与订单状态 -->
     <el-row :gutter="16">
-      <el-col :span="16">
+      <el-col :xs="24" :lg="16">
         <div class="page-card">
           <div class="table-toolbar">
             <span class="title">销售趋势</span>
-            <el-radio-group v-model="trendDays" size="small" @change="loadTrend">
+            <el-radio-group v-model="trendDays" size="small" @change="changeTrend">
               <el-radio-button :value="7">近 7 天</el-radio-button>
               <el-radio-button :value="30">近 30 天</el-radio-button>
               <el-radio-button :value="90">近 90 天</el-radio-button>
@@ -50,7 +51,7 @@
           <div ref="trendRef" class="chart" style="height: 320px"></div>
         </div>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :lg="8">
         <div class="page-card">
           <div class="table-toolbar"><span class="title">订单状态分布</span></div>
           <div ref="statusRef" class="chart" style="height: 320px"></div>
@@ -60,13 +61,13 @@
 
     <!-- 分类占比与热销排行 -->
     <el-row :gutter="16">
-      <el-col :span="9">
+      <el-col :xs="24" :lg="9">
         <div class="page-card">
           <div class="table-toolbar"><span class="title">分类销售占比</span></div>
           <div ref="categoryRef" class="chart" style="height: 300px"></div>
         </div>
       </el-col>
-      <el-col :span="15">
+      <el-col :xs="24" :lg="15">
         <div class="page-card">
           <div class="table-toolbar"><span class="title">热销商品 TOP 10</span></div>
           <div ref="topRef" class="chart" style="height: 300px"></div>
@@ -98,15 +99,24 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import * as echarts from 'echarts'
+import { graphic, init, use } from 'echarts/core'
+import { BarChart, LineChart, PieChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import {
   getSummary, getTrend, getCategorySales, getTopProducts,
   getOrderStatus, getLatestOrders
 } from '@/api/dashboard'
 import { money, ORDER_STATUS } from '@/utils/format'
 
+use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
+
 const summary = ref({})
+const loading = ref(true)
+const dashboardError = ref(false)
+let active = true
 const latestOrders = ref([])
 const trendDays = ref(30)
 
@@ -120,43 +130,61 @@ let statusChart = null
 let categoryChart = null
 let topChart = null
 
-const COLOR = '#10b981'
-const PALETTE = ['#10b981', '#34d399', '#6ee7b7', '#06b6d4', '#0ea5e9', '#a3e635', '#fbbf24', '#f472b6']
+const COLOR = '#286247'
+const PALETTE = ['#286247', '#6d8755', '#afc26a', '#395b77', '#b27b3c', '#a13d2c', '#677b83', '#73637e']
 
 const statCards = computed(() => [
   {
     label: '今日订单数',
     value: summary.value.todayOrderCount ?? '-',
     icon: 'Odometer',
-    bg: 'linear-gradient(135deg, #34d399, #059669)'
+    bg: '#eaf1e4'
   },
   {
     label: '今日成交金额',
     value: money(summary.value.todayPayAmount ?? 0),
     icon: 'Coin',
-    bg: 'linear-gradient(135deg, #fbbf24, #d97706)'
+    bg: '#eaf1e4'
   },
   {
     label: '会员总数',
     value: summary.value.memberCount ?? '-',
     icon: 'User',
-    bg: 'linear-gradient(135deg, #60a5fa, #2563eb)'
+    bg: '#eaf1e4'
   },
   {
     label: '在售商品',
     value: summary.value.productCount ?? '-',
     icon: 'Goods',
-    bg: 'linear-gradient(135deg, #a78bfa, #7c3aed)'
+    bg: '#eaf1e4'
   }
 ])
 
-onMounted(async () => {
+onMounted(() => {
   initCharts()
-  await Promise.all([loadSummary(), loadTrend(), loadStatus(), loadCategory(), loadTop(), loadLatest()])
   window.addEventListener('resize', handleResize)
+  loadDashboard()
 })
 
+async function loadDashboard() {
+  loading.value = true
+  dashboardError.value = false
+  const results = await Promise.allSettled([loadSummary(), loadTrend(), loadStatus(), loadCategory(), loadTop(), loadLatest()])
+  if (!active) return
+  dashboardError.value = results.some(result => result.status === 'rejected')
+  loading.value = false
+}
+
+async function changeTrend() {
+  try {
+    await loadTrend()
+  } catch {
+    if (active) dashboardError.value = true
+  }
+}
+
 onBeforeUnmount(() => {
+  active = false
   window.removeEventListener('resize', handleResize)
   ;[trendChart, statusChart, categoryChart, topChart].forEach((chart) => chart && chart.dispose())
 })
@@ -166,10 +194,10 @@ function handleResize() {
 }
 
 function initCharts() {
-  trendChart = echarts.init(trendRef.value)
-  statusChart = echarts.init(statusRef.value)
-  categoryChart = echarts.init(categoryRef.value)
-  topChart = echarts.init(topRef.value)
+  trendChart = init(trendRef.value)
+  statusChart = init(statusRef.value)
+  categoryChart = init(categoryRef.value)
+  topChart = init(topRef.value)
 }
 
 async function loadSummary() {
@@ -178,6 +206,7 @@ async function loadSummary() {
 
 async function loadTrend() {
   const data = await getTrend(trendDays.value)
+  if (!active) return
   trendChart.setOption({
     color: [COLOR, '#fbbf24'],
     tooltip: { trigger: 'axis' },
@@ -212,7 +241,7 @@ async function loadTrend() {
         symbolSize: 6,
         data: data.map((item) => item.payAmount),
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(16,185,129,0.28)' },
             { offset: 1, color: 'rgba(16,185,129,0.02)' }
           ])
@@ -234,6 +263,7 @@ async function loadTrend() {
 
 async function loadStatus() {
   const data = await getOrderStatus()
+  if (!active) return
   statusChart.setOption({
     color: PALETTE,
     tooltip: { trigger: 'item', formatter: '{b}: {c} 单 ({d}%)' },
@@ -256,6 +286,7 @@ async function loadStatus() {
 
 async function loadCategory() {
   const data = await getCategorySales()
+  if (!active) return
   categoryChart.setOption({
     color: PALETTE,
     tooltip: { trigger: 'item', formatter: '{b}: ¥{c} ({d}%)' },
@@ -275,6 +306,7 @@ async function loadCategory() {
 
 async function loadTop() {
   const data = await getTopProducts(10)
+  if (!active) return
   topChart.setOption({
     color: [COLOR],
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -299,7 +331,7 @@ async function loadTop() {
         barWidth: 14,
         itemStyle: {
           borderRadius: [0, 7, 7, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+          color: new graphic.LinearGradient(0, 0, 1, 0, [
             { offset: 0, color: '#6ee7b7' },
             { offset: 1, color: '#059669' }
           ])
@@ -352,4 +384,10 @@ async function loadLatest() {
 .chart {
   width: 100%;
 }
+
+.dashboard .el-row { row-gap: 12px; }
+.todo-banner { text-decoration: none; color: var(--pine); border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-panel); }
+.todo-banner:hover { border-color: var(--action); background: var(--soft-green); }
+.chart { min-width: 0; }
+@media (max-width: 560px) { .stat-card { padding: 12px; gap: 7px; } .stat-card .icon-wrap { width: 30px; height: 30px; } }
 </style>

@@ -5,7 +5,7 @@
     <!-- 收货信息 -->
     <div class="section-card">
       <h2>收货信息</h2>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" style="max-width: 560px">
+      <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="90px" style="max-width: 560px">
         <el-form-item label="收货人" prop="receiverName">
           <el-input v-model="form.receiverName" placeholder="请输入收货人姓名" />
         </el-form-item>
@@ -25,7 +25,7 @@
     <div class="section-card">
       <h2>商品清单</h2>
       <div v-for="item in items" :key="item.skuId" class="goods-row">
-        <img :src="item.pic || '/img/logo.svg'" alt="" />
+        <product-image :src="item.pic" alt="" />
         <div class="goods-info">
           <div class="name">{{ item.name }}</div>
           <div class="specs">{{ item.specs }}</div>
@@ -39,15 +39,15 @@
     <div class="section-card">
       <h2>优惠券</h2>
       <div v-if="usableCoupons.length" class="coupon-list">
-        <div class="coupon-option" :class="{ active: couponMemberId === null }"
+        <button type="button" class="coupon-option" :aria-pressed="couponMemberId === null" :class="{ active: couponMemberId === null }"
              @click="selectCoupon(null)">
           不使用优惠券
-        </div>
-        <div v-for="coupon in usableCoupons" :key="coupon.id" class="coupon-option"
-             :class="{ active: couponMemberId === coupon.id }" @click="selectCoupon(coupon.id)">
+        </button>
+        <button type="button" v-for="coupon in usableCoupons" :key="coupon.id" class="coupon-option"
+             :class="{ active: couponMemberId === coupon.id }" :aria-pressed="couponMemberId === coupon.id" @click="selectCoupon(coupon.id)">
           <span>{{ coupon.name }}</span>
           <b>{{ coupon.type === 1 ? `减 ${Number(coupon.amount)} 元` : `${Number(coupon.amount)} 折` }}</b>
-        </div>
+        </button>
       </div>
       <p v-else class="no-coupon">
         暂无可用优惠券
@@ -56,7 +56,9 @@
     </div>
 
     <!-- 金额汇总 -->
-    <div v-if="!quote && !quoting" class="section-card">
+    <load-state v-if="quoting && !quote" :loading="quoting" />
+    <div v-else-if="!quote" class="section-card" role="status">
+      <p>{{ pendingConfirmation ? '上次提交的结果尚待确认。' : '暂时无法显示结算金额。' }}</p>
       <el-button @click="refreshCheckout">{{ pendingConfirmation ? '查询下单结果' : '重新获取结算金额' }}</el-button>
     </div>
     <div v-if="quote" class="summary-bar" v-loading="quoting">
@@ -76,6 +78,8 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
+import ProductImage from '@/components/ProductImage.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -577,5 +581,19 @@ async function submitCheckout() {
 .submit-btn {
   min-width: 140px;
   border-radius: 12px;
+}
+
+.section-card h2::before { display: none; }
+.section-card h2 { padding-bottom: 9px; border-bottom: 1px solid var(--line); color: var(--pine); }
+.coupon-option { font: inherit; text-align: left; color: var(--ink); }
+.goods-row, .amounts, .pay-row { min-width: 0; }
+.amounts, .pay-row { flex-wrap: wrap; row-gap: 8px; }
+@media (max-width: 620px) {
+  .section-card, .summary-bar { padding: 12px; }
+  .section-card :deep(.el-form-item__label) { width: min(76px, 26vw) !important; padding-right: 8px; }
+  .goods-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 8px; }
+  .goods-row img { width: 48px; height: 48px; }
+  .goods-row .subtotal { grid-column: 2 / -1; width: auto; justify-self: end; }
+  .pay-row .submit-btn { width: 100%; }
 }
 </style>

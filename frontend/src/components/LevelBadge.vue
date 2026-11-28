@@ -1,5 +1,5 @@
 <template>
-  <span v-if="level >= 2" class="level-badge" :class="`lv-${level}`">
+  <span v-if="level >= 2" class="level-badge" :class="['lv-' + level, 'size-' + size]">
     <i class="mark"></i>{{ text }}
   </span>
 </template>
@@ -44,20 +44,21 @@ const text = computed(() => ({ 2: '银卡', 3: '金卡', 4: '钻石' }[props.lev
 }
 
 .lv-2 {
-  background: linear-gradient(120deg, #f1f5f9, #cbd5e1);
+  background: #e8eff5;
   color: #475569;
   border: 1px solid #cbd5e1;
 }
 
 .lv-3 {
-  background: linear-gradient(120deg, #fef3c7, #fbbf24);
+  background: #faecd4;
   color: #78350f;
   border: 1px solid #f59e0b;
 }
 
 .lv-4 {
-  background: linear-gradient(120deg, #312e81, #6366f1 60%, #a5b4fc);
+  background: #354f66;
   color: #ffffff;
-  border: 1px solid #4f46e5;
+  border: 1px solid #354f66;
 }
+.size-md { height: 22px; padding-inline: 8px; }
 </style>

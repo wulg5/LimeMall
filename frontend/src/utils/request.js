@@ -51,7 +51,9 @@ request.interceptors.response.use(
     return Promise.reject(error)
   },
   (error) => {
-    const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
+    const timedOut = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
+    const fallback = timedOut ? '请求超时，请重试' : '暂时无法连接服务，请重试'
+    const message = error.response?.data?.message || fallback
     ElMessage.error(message)
     return Promise.reject(error)
   }

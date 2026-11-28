@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
     <el-row :gutter="16">
-      <el-col :span="9">
+      <el-col :xs="24" :md="9">
         <div class="page-card profile-card">
           <el-avatar :size="88" :src="userStore.info?.avatar || '/img/avatar.svg'" />
           <h3>{{ userStore.info?.nickname }}</h3>
@@ -30,12 +30,12 @@
         </div>
       </el-col>
 
-      <el-col :span="15">
+      <el-col :xs="24" :md="15">
         <div class="page-card">
           <div class="table-toolbar">
             <span class="title">修改密码</span>
           </div>
-          <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" style="max-width: 460px">
+          <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="100px" style="max-width: 460px">
             <el-form-item label="原密码" prop="oldPassword">
               <el-input v-model="form.oldPassword" type="password" show-password placeholder="请输入原密码" />
             </el-form-item>
@@ -55,7 +55,7 @@
 
     <!-- 编辑资料弹窗 -->
     <el-dialog v-model="profileVisible" title="编辑资料" width="460px" destroy-on-close>
-      <el-form ref="profileFormRef" :model="profileForm" :rules="profileRules" label-width="80px">
+      <el-form scroll-to-error ref="profileFormRef" :model="profileForm" :rules="profileRules" label-width="80px">
         <el-form-item label="头像">
           <el-upload :show-file-list="false" :http-request="uploadAvatar" accept="image/*">
             <img v-if="profileForm.avatar" :src="profileForm.avatar" class="avatar-preview" alt="头像" />
@@ -123,7 +123,7 @@ async function uploadAvatar(options) {
 }
 
 async function saveProfile() {
-  await profileFormRef.value.validate()
+  if (!await profileFormRef.value.validate().catch(() => false)) return
   savingProfile.value = true
   try {
     await updateProfile({ ...profileForm })
@@ -161,7 +161,7 @@ const rules = {
 }
 
 async function handleSave() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     // 新旧密码均加密传输（服务端强制校验 encrypted=true）
@@ -236,4 +236,6 @@ async function handleSave() {
 .info-row b {
   color: var(--el-color-primary);
 }
+
+.page-container .el-row { row-gap: 13px; }
 </style>

@@ -14,20 +14,20 @@
         </div>
 
         <div v-for="item in cartStore.items" :key="item.skuId" class="cart-row">
-          <el-checkbox :model-value="item.checked" @change="(value) => cartStore.toggle(item.skuId, value)" />
-          <div class="col-product product-info" @click="$router.push(`/shop/product/${item.productId}`)">
-            <img :src="item.pic || '/img/logo.svg'" alt="" />
+          <el-checkbox :aria-label="'选择 ' + item.name" :model-value="item.checked" @change="(value) => cartStore.toggle(item.skuId, value)" />
+          <router-link class="col-product product-info" :to="'/shop/product/' + item.productId">
+            <product-image :src="item.pic" alt="" />
             <div>
               <div class="name">{{ item.name }}</div>
               <div class="specs">{{ item.specs }}</div>
             </div>
-          </div>
-          <span class="col-price">{{ money(item.price) }}</span>
+          </router-link>
+          <span class="col-price"><span class="mobile-label">单价 </span>{{ money(item.price) }}</span>
           <div class="col-qty">
-            <el-input-number :model-value="item.quantity" :min="1" :max="item.stock" :precision="0" :value-on-clear="1"
+            <el-input-number :aria-label="'购买数量 ' + item.name" :model-value="item.quantity" :min="1" :max="item.stock" :precision="0" :value-on-clear="1"
                              size="small" @change="(value) => cartStore.updateQuantity(item.skuId, value)" />
           </div>
-          <span class="col-subtotal subtotal">{{ money(item.price * item.quantity) }}</span>
+          <span class="col-subtotal subtotal"><span class="mobile-label">小计 </span>{{ money(item.price * item.quantity) }}</span>
           <span class="col-action">
             <el-button link type="danger" @click="handleRemove(item)">删除</el-button>
           </span>
@@ -56,6 +56,7 @@
 </template>
 
 <script setup>
+import ProductImage from '@/components/ProductImage.vue'
 import { computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { useCartStore } from '@/stores/cart'
@@ -195,5 +196,23 @@ async function handleRemove(item) {
   background: #ffffff;
   border-radius: 16px;
   padding: 40px;
+}
+
+.cart-header, .cart-row { grid-template-columns: 55px minmax(150px, 1fr) minmax(70px, .3fr) 128px minmax(90px, .3fr) 53px; gap: 8px; }
+.product-info { color: inherit; text-decoration: none; }
+.product-info:hover .name { text-decoration: underline; }
+.mobile-label { display: none; }
+@media (max-width: 740px) {
+  .cart-card { padding: 8px 12px; }
+  .cart-header { display: block; }
+  .cart-header > span { display: none; }
+  .cart-row { grid-template-columns: 22px minmax(0, 1fr) max-content; gap: 8px; }
+  .cart-row .col-product { grid-column: 2 / -1; }
+  .cart-row .col-price, .cart-row .col-subtotal { grid-column: 2; }
+  .cart-row .col-qty, .cart-row .col-action { grid-column: 3; justify-self: end; }
+  .mobile-label { display: inline; color: var(--muted); font-size: 12px; }
+  .checkout-bar { flex-wrap: wrap; margin-bottom: 48px; gap: 8px; padding: 12px; bottom: 0; position: static; }
+  .summary { margin-left: auto; }
+  .checkout-bar .checkout-btn { width: 100%; }
 }
 </style>

@@ -37,11 +37,12 @@
                    @click="$router.push('/admin/product/edit')">新增商品</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column label="商品" min-width="320">
           <template #default="{ row }">
             <div class="cell-product">
-              <img class="table-pic" :src="row.mainPic || '/img/logo.svg'" alt="" />
+              <product-image class="table-pic" :src="row.mainPic" alt="" />
               <div>
                 <div class="name">{{ row.name }}</div>
                 <div class="sub">{{ row.subTitle }}</div>
@@ -76,7 +77,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next, sizes" :total="total"
                        v-model:current-page="query.pageNum" v-model:page-size="query.pageSize"
                        @current-change="load" @size-change="load" />
@@ -86,6 +87,8 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
+import ProductImage from '@/components/ProductImage.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -95,7 +98,9 @@ import { money } from '@/utils/format'
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 const total = ref(0)
 const brandList = ref([])
@@ -124,7 +129,9 @@ onMounted(async () => {
 })
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const params = {
       pageNum: query.pageNum,
@@ -135,10 +142,13 @@ async function load() {
       categoryId: query.categoryPath?.length ? query.categoryPath[query.categoryPath.length - 1] : undefined
     }
     const data = await productPage(params)
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 

@@ -1,5 +1,6 @@
 <template>
   <div v-if="info" class="member-page">
+    <h1 class="shop-page-title">会员中心</h1>
     <!-- 会员卡片 -->
     <div class="member-card">
       <div class="member-top">
@@ -72,7 +73,7 @@
 
     <!-- 编辑资料 -->
     <el-dialog v-model="profileVisible" title="编辑资料" width="440px" destroy-on-close>
-      <el-form ref="profileFormRef" :model="profileForm" :rules="profileRules" label-width="80px">
+      <el-form scroll-to-error ref="profileFormRef" :model="profileForm" :rules="profileRules" label-width="80px">
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="profileForm.nickname" maxlength="64" />
         </el-form-item>
@@ -99,7 +100,7 @@
 
     <!-- 修改密码 -->
     <el-dialog v-model="passwordVisible" title="修改密码" width="420px" destroy-on-close>
-      <el-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-width="90px">
+      <el-form scroll-to-error ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-width="90px">
         <el-form-item label="原密码" prop="oldPassword">
           <el-input v-model="passwordForm.oldPassword" type="password" show-password />
         </el-form-item>
@@ -116,9 +117,11 @@
       </template>
     </el-dialog>
   </div>
+  <load-state v-else :loading="memberLoading" :error="memberError" @retry="loadMember" />
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useShopStore } from '@/stores/shop'
@@ -155,13 +158,21 @@ const progressPercent = computed(() => {
   return Math.max(0, Math.min(100, Math.round((done / span) * 100)))
 })
 
-onMounted(async () => {
+const memberLoading = ref(true)
+const memberError = ref(false)
+onMounted(loadMember)
+
+async function loadMember() {
+  memberLoading.value = true
+  memberError.value = false
   try {
     await shopStore.fetchMe()
-  } catch (e) {
-    /* 拦截器处理 */
+  } catch {
+    memberError.value = true
+  } finally {
+    memberLoading.value = false
   }
-})
+}
 
 /* ---------------- 编辑资料 ---------------- */
 const profileVisible = ref(false)
@@ -183,7 +194,7 @@ function openProfileEditor() {
 }
 
 async function saveProfile() {
-  await profileFormRef.value.validate()
+  if (!await profileFormRef.value.validate().catch(() => false)) return
   savingProfile.value = true
   try {
     await updateMemberProfile({
@@ -231,7 +242,7 @@ function openPasswordDialog() {
 }
 
 async function savePassword() {
-  await passwordFormRef.value.validate()
+  if (!await passwordFormRef.value.validate().catch(() => false)) return
   savingPassword.value = true
   try {
     const [oldCipher, newCipher] = await Promise.all([
@@ -430,5 +441,16 @@ async function savePassword() {
   .benefit-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+.member-card, .benefit-block, .benefit-card { border: 1px solid var(--line); box-shadow: none; }
+.member-top, .stat-chips, .member-actions { flex-wrap: wrap; }
+.member-actions .el-button { margin-left: 0; }
+@media (max-width: 600px) {
+  .member-card, .benefit-block { padding: 13px; }
+  .member-top { gap: 11px; }
+  .stat-chips { gap: 6px; }
+  .stat-chip { flex: 1 1 98px; padding: 8px; min-width: 0; }
+  .benefit-grid { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

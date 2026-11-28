@@ -24,7 +24,8 @@
         <span class="title">会员列表</span>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column label="会员" min-width="200">
           <template #default="{ row }">
             <div class="cell-product">
@@ -58,7 +59,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next, sizes" :total="total"
                        v-model:current-page="query.pageNum" v-model:page-size="query.pageSize"
                        @current-change="load" @size-change="load" />
@@ -68,6 +69,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
@@ -77,7 +79,9 @@ import { MEMBER_LEVEL } from '@/utils/format'
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 const total = ref(0)
 
@@ -86,7 +90,9 @@ const query = reactive({ pageNum: 1, pageSize: 10, keyword: '', status: null })
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const data = await memberPage({
       pageNum: query.pageNum,
@@ -94,10 +100,13 @@ async function load() {
       keyword: query.keyword || undefined,
       status: query.status ?? undefined
     })
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 

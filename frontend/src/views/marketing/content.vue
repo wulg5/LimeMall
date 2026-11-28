@@ -11,7 +11,7 @@
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="首页轮播" name="banners">
-          <el-table v-loading="loading" :data="banners">
+          <load-state v-if="listError" :error="listError" @retry="load" />          <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="banners">
             <el-table-column label="标题" min-width="220">
               <template #default="{ row }">
                 <div class="banner-cell">
@@ -42,7 +42,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="商城公告" name="notices">
-          <el-table v-loading="loading" :data="notices">
+          <load-state v-if="listError" :error="listError" @retry="load" />          <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="notices">
             <el-table-column prop="content" label="公告内容" min-width="320" />
             <el-table-column prop="sort" label="排序" width="80" />
             <el-table-column label="状态" width="90">
@@ -65,7 +65,7 @@
 
     <!-- 轮播编辑弹窗 -->
     <el-dialog v-model="bannerVisible" :title="bannerForm.id ? '编辑轮播' : '新增轮播'" width="620px" destroy-on-close>
-      <el-form ref="bannerFormRef" :model="bannerForm" :rules="bannerRules" label-width="92px">
+      <el-form scroll-to-error ref="bannerFormRef" :model="bannerForm" :rules="bannerRules" label-width="92px">
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="角标" prop="tag"><el-input v-model="bannerForm.tag" maxlength="32" /></el-form-item>
@@ -77,8 +77,8 @@
           <el-col :span="12">
             <el-form-item label="渐变起始色" prop="bgFrom"><el-color-picker v-model="bannerForm.bgFrom" /></el-form-item>
             <el-form-item label="渐变结束色" prop="bgTo"><el-color-picker v-model="bannerForm.bgTo" /></el-form-item>
-            <el-form-item label="拼贴图1"><el-input v-model="bannerForm.image1" placeholder="/img/products/p02.svg" /></el-form-item>
-            <el-form-item label="拼贴图2"><el-input v-model="bannerForm.image2" placeholder="/img/products/p03.svg" /></el-form-item>
+            <el-form-item label="主图地址"><el-input v-model="bannerForm.image1" placeholder="/img/demo-products/p03.webp" /></el-form-item>
+            <el-form-item label="辅图地址"><el-input v-model="bannerForm.image2" placeholder="/img/demo-products/p01.webp" /></el-form-item>
             <el-form-item label="排序"><el-input-number v-model="bannerForm.sort" :min="0" /></el-form-item>
             <el-form-item label="状态">
               <el-radio-group v-model="bannerForm.status">
@@ -97,7 +97,7 @@
 
     <!-- 公告编辑弹窗 -->
     <el-dialog v-model="noticeVisible" :title="noticeForm.id ? '编辑公告' : '新增公告'" width="480px" destroy-on-close>
-      <el-form ref="noticeFormRef" :model="noticeForm" :rules="noticeRules" label-width="88px">
+      <el-form scroll-to-error ref="noticeFormRef" :model="noticeForm" :rules="noticeRules" label-width="88px">
         <el-form-item label="公告内容" prop="content">
           <el-input v-model="noticeForm.content" type="textarea" :rows="3" maxlength="255" show-word-limit />
         </el-form-item>
@@ -118,6 +118,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -130,7 +131,9 @@ import {
 const userStore = useUserStore()
 
 const activeTab = ref('banners')
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const saving = ref(false)
 const banners = ref([])
 const notices = ref([])
@@ -155,11 +158,18 @@ const noticeRules = {
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
-    ;[banners.value, notices.value] = await Promise.all([bannerList(), noticeList()])
+    const [bannerResults, noticeResults] = await Promise.all([bannerList(), noticeList()])
+    if (version !== loadVersion) return
+    banners.value = bannerResults
+    notices.value = noticeResults
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -172,7 +182,7 @@ function openBanner(row) {
 }
 
 async function saveBanner() {
-  await bannerFormRef.value.validate()
+  if (!await bannerFormRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     await (bannerForm.id ? bannerUpdate({ ...bannerForm }) : bannerCreate({ ...bannerForm }))
@@ -200,7 +210,7 @@ function openNotice(row) {
 }
 
 async function saveNotice() {
-  await noticeFormRef.value.validate()
+  if (!await noticeFormRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     await (noticeForm.id ? noticeUpdate({ ...noticeForm }) : noticeCreate({ ...noticeForm }))

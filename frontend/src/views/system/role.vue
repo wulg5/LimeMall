@@ -7,7 +7,8 @@
                    @click="openDialog()">新增角色</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="角色名称" width="160" />
         <el-table-column prop="description" label="角色描述" min-width="240" />
@@ -35,7 +36,7 @@
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑角色' : '新增角色'" width="460px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-form-item label="角色名称" prop="name">
           <el-input v-model="form.name" placeholder="如：运营专员" />
         </el-form-item>
@@ -72,6 +73,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -83,7 +85,9 @@ import {
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 
 const dialogVisible = ref(false)
@@ -105,11 +109,16 @@ const currentRole = ref(null)
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
+    if (version !== loadVersion) return
     list.value = await roleList()
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -121,7 +130,7 @@ function openDialog(row) {
 }
 
 async function handleSave() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     if (form.id) {

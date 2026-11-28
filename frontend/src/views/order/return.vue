@@ -1,10 +1,10 @@
 <template>
   <div class="page-container">
     <div class="page-card search-card">
-      <el-form inline>
+      <el-form inline @submit.prevent="handleSearch">
         <el-form-item label="订单号">
           <el-input v-model="query.orderSn" placeholder="输入订单号" clearable style="width: 200px"
-                    @keyup.enter="handleSearch" @clear="handleSearch" />
+                    @clear="handleSearch" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" placeholder="全部状态" clearable style="width: 130px">
@@ -12,7 +12,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+          <el-button type="primary" :icon="Search" native-type="submit" :loading="loading">查询</el-button>
           <el-button :icon="Refresh" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -20,10 +20,11 @@
 
     <div class="page-card">
       <div class="table-toolbar">
-        <span class="title">退款申请列表</span>
+        <h2 class="title">退款申请</h2>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column prop="orderSn" label="订单号" width="190" />
         <el-table-column prop="memberNickname" label="会员" width="120" />
         <el-table-column label="退款金额" width="120">
@@ -33,16 +34,16 @@
         </el-table-column>
         <el-table-column prop="reason" label="退款原因" min-width="180" show-overflow-tooltip />
         <el-table-column prop="description" label="问题描述" min-width="200" show-overflow-tooltip />
-        <el-table-column label="状态" width="100">
+        <el-table-column label="售后状态" width="136">
           <template #default="{ row }">
-            <el-tag :type="RETURN_STATUS[row.status]?.type">{{ RETURN_STATUS[row.status]?.text }}</el-tag>
+            <el-tag :type="row.status === 5 ? 'primary' : RETURN_STATUS[row.status]?.type">{{ RETURN_STATUS[row.status]?.text }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="申请时间" width="170" />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === 0 && userStore.hasPerm('oms:return:handle')"
-                       link type="primary" @click="openHandle(row)">审核</el-button>
+                       link type="primary" @click="openHandle(row)">审核退款</el-button>
             <el-button v-else-if="row.status === 5 && userStore.hasPerm('oms:return:handle')"
                        link type="primary" :loading="stockConfirmingId === row.id"
                        @click="handleReturnedStock(row)">确认退货入库</el-button>
@@ -53,7 +54,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next, sizes" :total="total"
                        v-model:current-page="query.pageNum" v-model:page-size="query.pageSize"
                        @current-change="load" @size-change="load" />
@@ -83,7 +84,9 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import LoadState from '@/components/LoadState.vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
@@ -91,8 +94,11 @@ import { confirmReturnedStock, returnPage, returnHandle } from '@/api/order'
 import { money, RETURN_STATUS } from '@/utils/format'
 
 const userStore = useUserStore()
+const route = useRoute()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 const total = ref(0)
 
@@ -104,10 +110,24 @@ const current = ref(null)
 const handleNote = ref('')
 const stockConfirmingId = ref(null)
 
-onMounted(load)
+function applyRouteFilters() {
+  query.orderSn = typeof route.query.orderSn === 'string' ? route.query.orderSn : ''
+  query.status = typeof route.query.status === 'string' && RETURN_STATUS[route.query.status]
+    ? Number(route.query.status)
+    : null
+  query.pageNum = 1
+  load()
+}
+
+onMounted(applyRouteFilters)
+watch(() => [route.query.status, route.query.orderSn], () => {
+  if (route.path === '/admin/order/return') applyRouteFilters()
+})
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const data = await returnPage({
       pageNum: query.pageNum,
@@ -115,10 +135,13 @@ async function load() {
       orderSn: query.orderSn || undefined,
       status: query.status ?? undefined
     })
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -196,4 +219,7 @@ async function submitHandle(approve) {
 .handle-info {
   margin-bottom: 16px;
 }
+
+.table-toolbar h2 { margin: 0; }
+.el-table :deep(.el-tag) { white-space: nowrap; }
 </style>

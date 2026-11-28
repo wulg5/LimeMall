@@ -11,10 +11,11 @@
     <div class="detail-card">
       <!-- 左侧图册 -->
       <div class="gallery">
-        <img class="main-pic" :src="currentPic || detail.mainPic || '/img/logo.svg'" :alt="detail.name" />
+        <product-image class="main-pic" :src="currentPic || detail.mainPic" :alt="isDemoProductPhoto(currentPic || detail.mainPic) ? detail.name + '的同类商品照片' : detail.name" eager />
+        <a v-if="isDemoProductPhoto(currentPic || detail.mainPic)" class="photo-credit" href="/img/demo-products/SOURCES.html">同类商品实拍示意</a>
         <div v-if="album.length > 1" class="thumbs">
-          <img v-for="pic in album" :key="pic" :src="pic"
-               :class="{ active: currentPic === pic }" @click="currentPic = pic" alt="" />
+          <button v-for="(pic, index) in album" :key="pic" type="button" :aria-label="'查看图片 ' + (index + 1)"
+                  :aria-pressed="currentPic === pic" @click="currentPic = pic"><product-image :src="pic" alt="" /></button>
         </div>
       </div>
 
@@ -45,24 +46,25 @@
         <div class="sku-section">
           <div class="label">选择规格</div>
           <div class="sku-list">
-            <div v-for="sku in detail.skus" :key="sku.id"
-                 class="sku-item" :class="{ active: selectedSkuId === sku.id }"
+            <button v-for="sku in detail.skus" :key="sku.id" type="button"
+                 class="sku-item" :class="{ active: selectedSkuId === sku.id }" :aria-pressed="selectedSkuId === sku.id"
                  @click="selectSku(sku)">
               <span>{{ specsToText(sku.specs) }}</span>
               <b>{{ money(sku.flashPrice || sku.price) }}</b>
               <em v-if="sku.flashPrice" class="sku-flash">秒杀</em>
-            </div>
+              <span v-if="sku.stock <= 0">缺货</span>
+            </button>
           </div>
         </div>
 
         <div class="quantity-row">
           <span class="label">数量</span>
-          <el-input-number v-model="quantity" :min="1" :max="maxQuantity" />
+          <el-input-number v-model="quantity" aria-label="购买数量" :min="1" :max="maxQuantity" :disabled="!selectedSku || selectedSku.stock <= 0" />
           <span class="stock-text">库存 {{ selectedSku ? selectedSku.stock : 0 }} {{ detail.unit }}</span>
         </div>
 
         <div class="action-row">
-          <el-button size="large" class="cart-btn" :disabled="!selectedSku || selectedSku.stock <= 0"
+          <el-button size="large" class="cart-btn" :loading="adding" :disabled="!selectedSku || selectedSku.stock <= 0"
                      @click="addToCart(false)">
             <el-icon><ShoppingCart /></el-icon> 加入购物车
           </el-button>
@@ -70,7 +72,7 @@
                      @click="addToCart(true)">
             立即购买
           </el-button>
-          <el-button v-if="!selectedSku || selectedSku.stock <= 0" size="large" disabled>暂时缺货</el-button>
+          <span v-if="!selectedSku || selectedSku.stock <= 0" class="stock-text" role="status">暂时缺货</span>
         </div>
       </div>
     </div>
@@ -106,12 +108,16 @@
                          @current-change="loadComments" />
         </div>
       </template>
+      <load-state v-else-if="commentsLoading || commentsError" :loading="commentsLoading" :error="commentsError" @retry="loadComments" />
       <el-empty v-else description="暂无评价，购买并确认收货后可发表评价" :image-size="80" />
     </div>
   </div>
+  <load-state v-else :loading="detailLoading" :error="detailError" @retry="detailRetry++" />
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
+import ProductImage from '@/components/ProductImage.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -119,6 +125,7 @@ import { ShoppingCart } from '@element-plus/icons-vue'
 import { getProductComments, getProductDetail } from '@/api/portal'
 import { useCartStore } from '@/stores/cart'
 import { money, specsToText } from '@/utils/format'
+import { isDemoProductPhoto } from '@/utils/productImages'
 import { cheapestAvailableSku } from '@/utils/sku'
 import LevelBadge from '@/components/LevelBadge.vue'
 
@@ -127,6 +134,12 @@ const router = useRouter()
 const cartStore = useCartStore()
 
 const detail = ref(null)
+const detailLoading = ref(true)
+const detailError = ref(false)
+const detailRetry = ref(0)
+const commentsLoading = ref(false)
+const commentsError = ref(false)
+const adding = ref(false)
 const selectedSkuId = ref(null)
 const quantity = ref(1)
 const currentPic = ref('')
@@ -151,11 +164,13 @@ const maxQuantity = computed(() =>
 
 let latestCommentRequest = 0
 
-watch([() => route.params.id, () => route.query.skuId], async ([id, skuId], _, onCleanup) => {
+watch([() => route.params.id, () => route.query.skuId, detailRetry], async ([id, skuId], _, onCleanup) => {
   if (!id) return
   let active = true
   onCleanup(() => { active = false })
   detail.value = null
+  detailLoading.value = true
+  detailError.value = false
   selectedSkuId.value = null
   quantity.value = 1
   comments.value = []
@@ -173,13 +188,17 @@ watch([() => route.params.id, () => route.query.skuId], async ([id, skuId], _, o
     selectedSkuId.value = selected?.id ?? null
     loadComments()
   } catch {
-    // 请求错误由拦截器提示。
+    if (active) detailError.value = true
+  } finally {
+    if (active) detailLoading.value = false
   }
 }, { immediate: true })
 
 async function loadComments() {
   const request = ++latestCommentRequest
   const id = route.params.id
+  commentsLoading.value = true
+  commentsError.value = false
   try {
     const data = await getProductComments(id, {
       pageNum: commentPage.value,
@@ -190,7 +209,9 @@ async function loadComments() {
       commentTotal.value = data.total
     }
   } catch {
-    // 请求错误由拦截器提示。
+    if (request === latestCommentRequest) commentsError.value = true
+  } finally {
+    if (request === latestCommentRequest) commentsLoading.value = false
   }
 }
 
@@ -219,8 +240,15 @@ async function addToCart(buyNow) {
     router.push({ path: '/shop/checkout', query: { buyNow: '1' } })
     return
   }
-  await cartStore.add(item)
-  ElMessage.success('已加入购物车')
+  adding.value = true
+  try {
+    await cartStore.add(item)
+    ElMessage.success('已加入购物车')
+  } catch {
+    // 请求失败时保留当前规格，便于重试。
+  } finally {
+    adding.value = false
+  }
 }
 </script>
 
@@ -519,4 +547,26 @@ async function addToCart(buyNow) {
     width: 100%;
   }
 }
+
+.detail-card { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(16px, 3vw, 40px); }
+.gallery { width: 100%; min-width: 0; }
+.gallery .main-pic { border-radius: 9px; aspect-ratio: 1.13; }
+.thumbs button { padding: 0; background: var(--paper); border: 2px solid transparent; border-radius: 7px; cursor: pointer; }
+.thumbs button[aria-pressed='true'] { border-color: var(--action); }
+.thumbs button img { display: block; width: 62px; height: 62px; }
+.sku-item { font: inherit; text-align: left; min-height: 42px; }
+.info { min-width: 0; }
+.info h1 { color: var(--pine); font-size: clamp(24px, 3vw, 37px); line-height: 1.2; }
+.detail-html { overflow-wrap: anywhere; }
+.detail-html :deep(img) { max-width: 100%; height: auto; }
+.action-row, .quantity-row, .comments-head, .c-head { flex-wrap: wrap; }
+.action-row .el-button { margin: 0; }
+@media (max-width: 740px) {
+  .detail-card { display: grid; grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .detail-html-card { padding: 13px; }
+  .action-row { gap: 7px; }
+  .action-row .el-button { flex: 1; min-width: 0; height: 45px; padding-inline: 8px; }
+}
+
+.photo-credit { display: inline-block; margin: 6px 1px; color: var(--muted); font-size: 12px; }
 </style>

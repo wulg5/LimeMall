@@ -2,60 +2,60 @@
   <div class="shop-login-page">
     <div class="login-card">
       <div class="login-header">
-        <img src="/img/logo.svg" alt="LimeMall" />
+        <span class="brand-mark" aria-hidden="true"><el-icon><Orange /></el-icon></span>
         <h1>{{ isRegister ? '注册青柠商城账号' : '欢迎回到青柠商城' }}</h1>
         <p>{{ isRegister ? '注册后可领券、下单、管理订单' : '登录后可领券、下单、管理订单' }}</p>
       </div>
 
-      <el-form v-if="!isRegister" ref="loginFormRef" :model="loginForm" :rules="loginRules"
-               size="large" @keyup.enter="handleLogin">
+      <el-form scroll-to-error v-if="!isRegister" ref="loginFormRef" :model="loginForm" :rules="loginRules"
+               size="large" @submit.prevent="handleLogin">
         <el-form-item prop="username">
-          <el-input v-model="loginForm.username" placeholder="账号" :prefix-icon="User" />
+          <el-input v-model="loginForm.username" placeholder="账号" aria-label="账号" autocomplete="username" :prefix-icon="User" />
         </el-form-item>
         <el-form-item prop="password">
-          <el-input v-model="loginForm.password" type="password" show-password placeholder="密码" :prefix-icon="Lock" />
+          <el-input v-model="loginForm.password" type="password" show-password placeholder="密码" aria-label="密码" autocomplete="current-password" :prefix-icon="Lock" />
         </el-form-item>
         <el-form-item v-if="needCaptcha">
           <div class="captcha-row">
-            <el-input v-model="loginForm.captchaCode" placeholder="图形验证码" maxlength="4" />
-            <img :src="captchaImage" class="captcha-img" alt="验证码" title="看不清？点击刷新" @click="loadCaptcha" />
+            <el-input v-model="loginForm.captchaCode" placeholder="图形验证码" aria-label="图形验证码" autocomplete="off" maxlength="4" />
+            <button type="button" class="captcha-button" aria-label="刷新图形验证码" @click="loadCaptcha"><img :src="captchaImage" class="captcha-img" alt="图形验证码" /></button>
           </div>
         </el-form-item>
-        <el-button type="primary" size="large" class="submit-btn" :loading="loading" @click="handleLogin">
+        <el-button type="primary" size="large" class="submit-btn" :loading="loading" native-type="submit">
           登 录
         </el-button>
         <div class="login-security-tip">连续失败 2 次将要求图形验证码，连续失败 5 次将锁定 10 分钟</div>
       </el-form>
 
-      <el-form v-else ref="registerFormRef" :model="registerForm" :rules="registerRules"
-               size="large" @keyup.enter="handleRegister">
+      <el-form scroll-to-error v-else ref="registerFormRef" :model="registerForm" :rules="registerRules"
+               size="large" @submit.prevent="handleRegister">
         <el-form-item prop="username">
-          <el-input v-model="registerForm.username" placeholder="账号（3-20 位字母数字下划线）" :prefix-icon="User" />
+          <el-input v-model="registerForm.username" placeholder="账号（3-20 位字母数字下划线）" aria-label="注册账号" autocomplete="username" :prefix-icon="User" />
         </el-form-item>
         <el-form-item prop="password">
-          <el-input v-model="registerForm.password" type="password" show-password placeholder="密码（6-32 位）" :prefix-icon="Lock" />
+          <el-input v-model="registerForm.password" type="password" show-password placeholder="密码（6-32 位）" aria-label="注册密码" autocomplete="new-password" :prefix-icon="Lock" />
         </el-form-item>
         <el-form-item prop="confirmPassword">
-          <el-input v-model="registerForm.confirmPassword" type="password" show-password placeholder="确认密码" :prefix-icon="Lock" />
+          <el-input v-model="registerForm.confirmPassword" type="password" show-password placeholder="确认密码" aria-label="确认密码" autocomplete="new-password" :prefix-icon="Lock" />
         </el-form-item>
         <el-form-item prop="nickname">
-          <el-input v-model="registerForm.nickname" placeholder="昵称（选填）" :prefix-icon="UserFilled" />
+          <el-input v-model="registerForm.nickname" placeholder="昵称（选填）" aria-label="昵称" :prefix-icon="UserFilled" />
         </el-form-item>
         <el-form-item prop="phone">
-          <el-input v-model="registerForm.phone" placeholder="手机号（选填）" :prefix-icon="Iphone" />
+          <el-input v-model="registerForm.phone" placeholder="手机号（选填）" aria-label="手机号" autocomplete="tel" :prefix-icon="Iphone" />
         </el-form-item>
-        <el-button type="primary" size="large" class="submit-btn" :loading="loading" @click="handleRegister">
+        <el-button type="primary" size="large" class="submit-btn" :loading="loading" native-type="submit">
           注册并登录
         </el-button>
       </el-form>
 
       <div class="switch-row">
         <template v-if="!isRegister">
-          还没有账号？<a @click="isRegister = true">立即注册</a>
+          还没有账号？<button type="button" class="switch-link" @click="isRegister = true">立即注册</button>
           
         </template>
         <template v-else>
-          已有账号？<a @click="isRegister = false">去登录</a>
+          已有账号？<button type="button" class="switch-link" @click="isRegister = false">去登录</button>
         </template>
       </div>
     </div>
@@ -122,7 +122,7 @@ async function loadCaptcha() {
 }
 
 async function handleLogin() {
-  await loginFormRef.value.validate()
+  if (!await loginFormRef.value.validate().catch(() => false)) return
   loading.value = true
   try {
     await shopStore.login(loginForm)
@@ -141,7 +141,7 @@ async function handleLogin() {
 }
 
 async function handleRegister() {
-  await registerFormRef.value.validate()
+  if (!await registerFormRef.value.validate().catch(() => false)) return
   loading.value = true
   try {
     const cipher = await encryptRequired(registerForm.password)
@@ -250,4 +250,13 @@ async function handleRegister() {
   color: #9ca3af;
   font-size: 12px;
 }
+
+.shop-login-page { margin: 8px 0; }
+.login-card { max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius-panel); box-shadow: none; }
+.login-header .brand-mark { margin: 0 auto 12px; }
+.login-header h1 { font-size: clamp(22px, 4vw, 29px); color: var(--pine); }
+.switch-link { background: none; border: 0; color: var(--action); text-decoration: underline; padding: 6px; cursor: pointer; font: inherit; }
+.captcha-button { padding: 0; background: transparent; border: 0; }
+.captcha-button img { display: block; }
+@media (max-width: 480px) { .login-card { padding: 18px 14px; } }
 </style>

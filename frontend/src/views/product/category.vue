@@ -7,7 +7,8 @@
                    @click="openDialog()">新增分类</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="tree" row-key="id" :tree-props="{ children: 'children' }" default-expand-all>
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="tree" row-key="id" :tree-props="{ children: 'children' }" default-expand-all>
         <el-table-column prop="name" label="分类名称" min-width="240" />
         <el-table-column label="层级" width="100">
           <template #default="{ row }">
@@ -37,7 +38,7 @@
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑分类' : '新增分类'" width="460px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="88px">
         <el-form-item label="上级分类" prop="parentId">
           <el-select v-model="form.parentId" :disabled="!!form.id" style="width: 100%">
             <el-option label="无（作为一级分类）" :value="0" />
@@ -66,6 +67,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -74,7 +76,9 @@ import { categoryTree, categoryCreate, categoryUpdate, categoryDelete } from '@/
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const tree = ref([])
 
 const dialogVisible = ref(false)
@@ -90,11 +94,16 @@ const rules = {
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
+    if (version !== loadVersion) return
     tree.value = await categoryTree()
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -106,7 +115,7 @@ function openDialog(row) {
 }
 
 async function handleSave() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     if (form.id) {

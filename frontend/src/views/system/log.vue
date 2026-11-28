@@ -24,7 +24,8 @@
         <span class="title">操作日志（自动记录后台写操作）</span>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column prop="createTime" label="时间" width="170" />
         <el-table-column prop="adminUsername" label="管理员" width="110" />
         <el-table-column label="操作" min-width="200">
@@ -54,7 +55,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next, sizes" :total="total"
                        v-model:current-page="query.pageNum" v-model:page-size="query.pageSize"
                        @current-change="load" @size-change="load" />
@@ -64,11 +65,14 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { Refresh, Search, Warning } from '@element-plus/icons-vue'
 import { logPage } from '@/api/content'
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 const total = ref(0)
 const query = reactive({ pageNum: 1, pageSize: 10, keyword: '', status: null })
@@ -76,7 +80,9 @@ const query = reactive({ pageNum: 1, pageSize: 10, keyword: '', status: null })
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const data = await logPage({
       pageNum: query.pageNum,
@@ -84,10 +90,13 @@ async function load() {
       keyword: query.keyword || undefined,
       status: query.status ?? undefined
     })
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 

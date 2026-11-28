@@ -11,19 +11,17 @@
       <el-tab-pane label="已关闭" name="4" />
     </el-tabs>
 
-    <div v-if="list.length" class="order-list">
+    <div v-if="list.length && !listError" class="order-list">
       <div v-for="order in list" :key="order.id" class="order-card">
         <div class="order-header">
           <span class="order-sn">{{ order.orderSn }}</span>
           <span class="order-time">{{ order.createTime }}</span>
-          <el-tag :type="ORDER_STATUS[order.status]?.type" class="order-status">
-            {{ ORDER_STATUS[order.status]?.text }}
-          </el-tag>
+          <span class="order-status" :class="'order-status-' + order.status">{{ ORDER_STATUS[order.status]?.text || '未知状态' }}</span>
         </div>
 
         <div class="order-items">
           <div class="order-item">
-            <img :src="order.firstItemPic || '/img/logo.svg'" alt="" />
+            <product-image :src="order.firstItemPic" alt="" />
             <div class="item-name">{{ order.firstItemName }}</div>
             <span class="item-count">共 {{ order.itemCount }} 件</span>
           </div>
@@ -62,6 +60,7 @@
                        v-model:current-page="pageNum" :page-size="pageSize" @current-change="load" />
       </div>
     </div>
+    <load-state v-else-if="loadingOrders || listError" :loading="loadingOrders" :error="listError" @retry="load" />
     <el-empty v-else description="暂无相关订单" />
 
     <el-dialog v-model="detailVisible" title="订单详情" width="min(680px, 92vw)">
@@ -96,7 +95,7 @@
       <div class="review-list">
         <div v-for="item in reviewItems" :key="item.productId" class="review-item">
           <div class="review-goods">
-            <img :src="item.pic || '/img/logo.svg'" alt="" />
+            <product-image :src="item.pic" alt="" />
             <span class="review-name">{{ item.productName }}</span>
             <el-rate v-model="item.rating" />
           </div>
@@ -113,6 +112,8 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
+import ProductImage from '@/components/ProductImage.vue'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -135,7 +136,8 @@ let latestDetailRequest = 0
 const nowTs = ref(Date.now())
 let tickTimer = null
 let lastPendingRefresh = Date.now()
-let loadingOrders = false
+const loadingOrders = ref(true)
+const listError = ref(false)
 let latestListRequest = 0
 
 onMounted(() => {
@@ -149,7 +151,7 @@ onBeforeUnmount(() => {
 
 function tick() {
   nowTs.value = Date.now()
-  if (document.hidden || loadingOrders || nowTs.value - lastPendingRefresh < 5_000) return
+  if (document.hidden || loadingOrders.value || nowTs.value - lastPendingRefresh < 5_000) return
   if (list.value.some(order => order.status === 0)) {
     lastPendingRefresh = nowTs.value
     load().catch(() => {})
@@ -177,7 +179,8 @@ function canApplyRefund(order) {
 
 async function load() {
   const request = ++latestListRequest
-  loadingOrders = true
+  loadingOrders.value = true
+  listError.value = false
   try {
     const data = await getMyOrders({
       pageNum: pageNum.value,
@@ -187,8 +190,10 @@ async function load() {
     if (request !== latestListRequest) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (request === latestListRequest) listError.value = true
   } finally {
-    if (request === latestListRequest) loadingOrders = false
+    if (request === latestListRequest) loadingOrders.value = false
   }
 }
 
@@ -476,4 +481,21 @@ async function submitReview() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.order-header, .order-footer, .order-actions { flex-wrap: wrap; }
+.order-actions .el-button { margin-left: 0; }
+.order-item { min-width: 0; }
+.item-name { overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .order-card { padding: 12px; }
+  .order-header, .order-footer { padding-inline: 0; gap: 8px; }
+  .order-footer { align-items: flex-start; }
+  .order-actions { justify-content: flex-start; width: 100%; gap: 6px; }
+}
+
+.order-status { align-self: start; border-radius: 5px; padding: 3px 7px; color: var(--muted); background: #edf1ee; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.order-status-1 { background: #f8ecda; color: #87500f; }
+.order-status-2 { background: #e8eff5; color: #395b77; }
+.order-status-3 { background: #e5f1e5; color: #286247; }
+.order-status-4 { background: #f8ebe5; color: var(--price); }
 </style>

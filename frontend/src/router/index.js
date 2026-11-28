@@ -85,7 +85,8 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  document.title = (to.meta.title ? `${to.meta.title} · ` : '') + '青柠商城管理系统'
+  const brand = to.path.startsWith('/admin') ? '青柠商城后台' : '青柠商城'
+  document.title = to.meta.title ? to.meta.title + ' · ' + brand : brand
 
   // 商城前台：公开浏览，auth 页面要求会员登录
   if (to.path.startsWith('/shop')) {

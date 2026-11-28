@@ -6,7 +6,8 @@
         <el-button @click="$router.push('/admin/product/list')">返回列表</el-button>
       </div>
 
-      <el-form ref="formRef" v-loading="loading" :model="form" :rules="rules" label-width="92px">
+      <load-state v-if="loading || editError" :loading="loading" :error="editError" @retry="loadEditor" />
+      <el-form v-else scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="92px">
         <el-row :gutter="24">
           <el-col :span="12">
             <el-form-item label="商品名称" prop="name">
@@ -40,7 +41,7 @@
           <el-col :span="12">
             <el-form-item label="商品主图">
               <el-upload class="pic-uploader" :show-file-list="false" :http-request="uploadMainPic" accept="image/*">
-                <img v-if="form.mainPic" :src="form.mainPic" class="uploaded-pic" alt="主图" />
+                <product-image v-if="form.mainPic" :src="form.mainPic" class="uploaded-pic" alt="主图" />
                 <div v-else class="upload-placeholder">
                   <el-icon><Plus /></el-icon>
                   <span>点击上传</span>
@@ -103,6 +104,8 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
+import ProductImage from '@/components/ProductImage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -115,7 +118,8 @@ const route = useRoute()
 const router = useRouter()
 
 const formRef = ref()
-const loading = ref(false)
+const loading = ref(true)
+const editError = ref(false)
 const saving = ref(false)
 const brands = ref([])
 const categoryOptions = ref([])
@@ -149,19 +153,24 @@ const rules = {
   categoryPath: [{ required: true, type: 'array', min: 2, message: '请选择二级分类', trigger: 'change' }]
 }
 
-onMounted(async () => {
+onMounted(loadEditor)
+
+async function loadEditor() {
   loading.value = true
+  editError.value = false
   try {
     ;[brands.value, categoryOptions.value] = await Promise.all([brandOptions(), categoryTree()])
     if (isEdit.value) {
       await loadDetail()
-    } else {
+    } else if (!form.skus.length) {
       addSku()
     }
+  } catch {
+    editError.value = true
   } finally {
     loading.value = false
   }
-})
+}
 
 async function loadDetail() {
   const data = await productDetail(route.query.id)
@@ -211,7 +220,7 @@ async function uploadMainPic(options) {
 }
 
 async function handleSave() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   if (!form.skus.length) {
     ElMessage.warning('请至少添加一个 SKU')
     return
@@ -323,5 +332,11 @@ async function handleSave() {
 
 .form-footer .el-button {
   min-width: 140px;
+}
+
+.uploaded-pic, .el-upload { max-width: 100%; }
+@media (max-width: 760px) {
+  .page-card :deep(.el-form-item__label) { width: min(86px, 27vw) !important; }
+  .page-card :deep(.el-form-item__content) { min-width: 0; }
 }
 </style>

@@ -1,30 +1,31 @@
 <template>
   <div>
     <!-- 悬浮客服按钮 -->
-    <div class="chat-fab" title="在线客服" @click="togglePanel">
+    <button ref="launcherRef" class="chat-fab" type="button" aria-controls="shop-chat-panel" :aria-expanded="visible" @click="togglePanel">
       <el-icon :size="22"><Service /></el-icon>
       <span class="fab-text">客服</span>
-    </div>
+    </button>
 
     <!-- 聊天面板 -->
     <transition name="chat-pop">
-      <div v-if="visible" class="chat-panel">
+      <section v-if="visible" id="shop-chat-panel" class="chat-panel" aria-label="在线客服" @keydown.esc.stop="closeFromControl">
         <div class="chat-header">
           <div>
             <div class="chat-title">在线客服</div>
             <div class="chat-sub">{{ agentSubTitle }}</div>
           </div>
-          <el-icon class="close-btn" @click="closePanel"><Close /></el-icon>
+          <button ref="closeRef" type="button" class="close-btn" aria-label="关闭在线客服" @click="closeFromControl"><el-icon><Close /></el-icon></button>
         </div>
 
-        <div ref="listRef" class="chat-messages">
+        <div ref="listRef" class="chat-messages" role="log" aria-label="客服消息">
           <div v-if="!shopStore.token" class="chat-empty">
             <p>登录后即可与客服对话</p>
             <el-button type="primary" size="small" @click="goLogin">去登录</el-button>
           </div>
           <template v-else>
             <el-button v-if="hasOlder" link type="primary" :loading="loadingOlder" @click="loadOlderMessages">加载更早消息</el-button>
-            <div v-if="!messages.length" class="chat-empty">
+            <load-state v-if="chatLoading || chatError" :loading="chatLoading" :error="chatError" @retry="loadMessages" />
+            <div v-else-if="!messages.length" class="chat-empty">
               <p>您好，这里是青柠商城客服，请问有什么可以帮您？</p>
             </div>
             <div v-for="msg in messages" :key="msg.id" class="chat-msg" :class="{ mine: msg.fromType === 1 }">
@@ -35,18 +36,19 @@
         </div>
 
         <div v-if="shopStore.token" class="chat-input">
-          <el-input v-model="draft" placeholder="请输入您的问题，回车发送" maxlength="500"
+          <el-input v-model="draft" aria-label="客服消息内容" placeholder="请输入您的问题，回车发送" maxlength="500"
                     @keyup.enter="handleSend" />
           <el-button type="primary" :loading="sending" :disabled="!draft.trim()" @click="handleSend">
             发送
           </el-button>
         </div>
-      </div>
+      </section>
     </transition>
   </div>
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Close, Service } from '@element-plus/icons-vue'
@@ -60,6 +62,10 @@ const router = useRouter()
 const shopStore = useShopStore()
 
 const visible = ref(false)
+const chatLoading = ref(false)
+const chatError = ref(false)
+const closeRef = ref()
+const launcherRef = ref()
 const messages = ref([])
 const session = ref(null)
 const hasOlder = ref(false)
@@ -86,7 +92,9 @@ function togglePanel() {
   }
   visible.value = !visible.value
   if (visible.value) {
+    chatLoading.value = true
     loadMessages()
+    nextTick(() => closeRef.value?.focus())
     // 实时通道：服务端推送变更事件即刷新；同时保留低频轮询兜底
     connectChatSocket(shopStore.token, () => loadMessages())
     startPoll()
@@ -94,6 +102,11 @@ function togglePanel() {
   } else {
     closePanel()
   }
+}
+
+function closeFromControl() {
+  closePanel()
+  launcherRef.value?.focus()
 }
 
 function refreshWhenVisible() {
@@ -127,6 +140,7 @@ async function loadMessages() {
   try {
     const data = await getChatCurrent()
     if (request !== latestMessageRequest || !visible.value) return
+    chatError.value = false
     const changedSession = session.value?.id !== data.session?.id
     session.value = data.session || null
     if (changedSession) loadingOlder.value = false
@@ -141,7 +155,9 @@ async function loadMessages() {
       listRef.value.scrollTop = listRef.value.scrollHeight
     }
   } catch {
-    /* 登录态失效由拦截器统一处理 */
+    if (request === latestMessageRequest) chatError.value = true
+  } finally {
+    if (request === latestMessageRequest) chatLoading.value = false
   }
 }
 
@@ -174,6 +190,8 @@ async function handleSend() {
     await sendChatMessage(content)
     draft.value = ''
     await loadMessages()
+  } catch {
+    // 保留输入内容以便重发。
   } finally {
     sending.value = false
   }
@@ -332,4 +350,15 @@ onBeforeUnmount(closePanel)
   opacity: 0;
   transform: translateY(10px);
 }
+
+.chat-fab { display: flex; align-items: center; justify-content: center; gap: 6px; width: auto; min-height: 44px; height: auto; border: 1px solid #ffffff80; border-radius: 9px; padding: 7px 12px; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); color: var(--paper); background: var(--pine); box-shadow: 0 3px 11px #17392e40; font: inherit; }
+.chat-fab:hover { background: var(--action); transform: none; }
+.chat-fab .fab-text { font-weight: 650; font-size: 13px; }
+.chat-panel { width: min(360px, calc(100vw - 24px)); height: min(480px, calc(100dvh - 82px)); right: max(12px, env(safe-area-inset-right)); bottom: 64px; border: 1px solid var(--line); border-radius: var(--radius-panel); }
+.chat-header { background: var(--pine); }
+.close-btn { flex: 0 0 37px; align-self: center; min-height: 37px; display: grid; place-items: center; color: var(--paper); background: #ffffff18; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+.close-btn:hover { background: #ffffff33; }
+.chat-messages { background: var(--page); }
+.chat-msg.mine .bubble { color: var(--pine); background: var(--soft-green); }
+.bubble { overflow-wrap: anywhere; }
 </style>

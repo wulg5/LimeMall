@@ -26,7 +26,8 @@
                    @click="openDialog()">新建优惠券</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="list">
+      <load-state v-if="listError" :error="listError" @retry="load" />
+      <el-table v-else v-loading="loading" :empty-text="loading ? '正在加载…' : '暂无符合条件的记录'" :data="list">
         <el-table-column prop="name" label="优惠券名称" min-width="200" />
         <el-table-column label="类型" width="100">
           <template #default="{ row }">
@@ -77,7 +78,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-wrapper">
+      <div v-if="!listError" class="pagination-wrapper">
         <el-pagination background layout="total, prev, pager, next, sizes" :total="total"
                        v-model:current-page="query.pageNum" v-model:page-size="query.pageSize"
                        @current-change="load" @size-change="load" />
@@ -86,7 +87,7 @@
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑优惠券' : '新建优惠券'" width="520px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+      <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="优惠券名称" prop="name">
           <el-input v-model="form.name" maxlength="100" placeholder="如：新人专享 满100减10" />
         </el-form-item>
@@ -151,6 +152,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -160,7 +162,9 @@ import { COUPON_MEMBER_STATUS } from '@/utils/format'
 
 const userStore = useUserStore()
 
-const loading = ref(false)
+const loading = ref(true)
+const listError = ref(false)
+let loadVersion = 0
 const list = ref([])
 const total = ref(0)
 
@@ -201,7 +205,9 @@ const currentCoupon = ref(null)
 onMounted(load)
 
 async function load() {
+  const version = ++loadVersion
   loading.value = true
+  listError.value = false
   try {
     const data = await couponPage({
       pageNum: query.pageNum,
@@ -209,10 +215,13 @@ async function load() {
       name: query.name || undefined,
       status: query.status ?? undefined
     })
+    if (version !== loadVersion) return
     list.value = data.records
     total.value = data.total
+  } catch {
+    if (version === loadVersion) listError.value = true
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -256,7 +265,7 @@ function openDialog(row) {
 }
 
 async function handleSave() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   saving.value = true
   try {
     const payload = {

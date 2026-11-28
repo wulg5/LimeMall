@@ -1,46 +1,37 @@
 <template>
   <div class="login-page">
-    <!-- 左侧品牌区 -->
-    <div class="brand-panel">
+    <section class="brand-panel" aria-label="青柠商城后台">
       <div class="brand-content">
-        <div class="brand-logo">
-          <img src="/img/logo.svg" alt="LimeMall" />
-          <span>青柠商城</span>
-        </div>
-        <h1>LimeMall 电商管理系统</h1>
-        <p class="slogan">商品 · 订单 · 会员 · 营销 · 数据看板，一站式电商运营后台</p>
-        <ul class="feature-list">
-          <li>RBAC 权限体系，菜单到按钮级控制</li>
-          <li>SPU / SKU 商品模型，库存实时联动</li>
-          <li>订单状态机与退款审核闭环</li>
-          <li>实时经营看板，核心指标一目了然</li>
-        </ul>
+        <router-link class="brand-lockup" to="/shop">
+          <span class="brand-mark" aria-hidden="true"><el-icon><Orange /></el-icon></span>
+          <span><strong>青柠商城</strong><small>LimeMall</small></span>
+        </router-link>
+        <p class="brand-title">商城管理工作台</p>
+        <p>管理商品、订单、售后和会员服务。</p>
+        <router-link class="back-to-store" to="/shop">返回商城</router-link>
       </div>
-      <div class="circle c1"></div>
-      <div class="circle c2"></div>
-      <div class="circle c3"></div>
-    </div>
+    </section>
 
-    <!-- 右侧登录区 -->
+
     <div class="form-panel">
       <div class="form-card">
-        <h2>欢迎回来</h2>
+        <h1>管理员登录</h1>
         <p class="tip">请使用管理员账号登录系统</p>
 
-        <el-form ref="formRef" :model="form" :rules="rules" size="large" @keyup.enter="handleLogin">
+        <el-form scroll-to-error ref="formRef" :model="form" :rules="rules" size="large" @submit.prevent="handleLogin">
           <el-form-item prop="username">
-            <el-input v-model="form.username" placeholder="账号" :prefix-icon="User" clearable />
+            <el-input v-model="form.username" placeholder="账号" aria-label="账号" autocomplete="username" :prefix-icon="User" clearable />
           </el-form-item>
           <el-form-item prop="password">
-            <el-input v-model="form.password" type="password" show-password placeholder="密码" :prefix-icon="Lock" />
+            <el-input v-model="form.password" type="password" show-password placeholder="密码" aria-label="密码" autocomplete="current-password" :prefix-icon="Lock" />
           </el-form-item>
           <el-form-item v-if="needCaptcha" prop="captchaCode">
             <div class="captcha-row">
-              <el-input v-model="form.captchaCode" placeholder="图形验证码" :prefix-icon="Key" maxlength="4" />
-              <img :src="captchaImage" class="captcha-img" alt="验证码" title="看不清？点击刷新" @click="loadCaptcha" />
+              <el-input v-model="form.captchaCode" placeholder="图形验证码" aria-label="图形验证码" autocomplete="off" :prefix-icon="Key" maxlength="4" />
+              <button type="button" class="captcha-button" aria-label="刷新图形验证码" @click="loadCaptcha"><img :src="captchaImage" class="captcha-img" alt="图形验证码" /></button>
             </div>
           </el-form-item>
-          <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
+          <el-button type="primary" size="large" class="login-btn" :loading="loading" native-type="submit">
             登 录
           </el-button>
           <div class="login-security-tip">连续失败 2 次将要求图形验证码，连续失败 5 次将锁定 10 分钟</div>
@@ -83,7 +74,7 @@ async function loadCaptcha() {
 }
 
 async function handleLogin() {
-  await formRef.value.validate()
+  if (!await formRef.value.validate().catch(() => false)) return
   loading.value = true
   try {
     await userStore.login(form)
@@ -103,221 +94,25 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-.login-page {
-  display: flex;
-  height: 100%;
-  background: #ffffff;
-}
-
-/* 左侧品牌区 */
-.brand-panel {
-  flex: 1.15;
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(150deg, #064e3b 0%, #059669 55%, #10b981 100%);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  padding: 0 72px;
-}
-
-.brand-content {
-  position: relative;
-  z-index: 2;
-  max-width: 520px;
-}
-
-.brand-logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  margin-bottom: 48px;
-}
-
-.brand-logo img {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-}
-
-.brand-panel h1 {
-  font-size: 36px;
-  line-height: 1.3;
-  margin: 0 0 18px;
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-
-.slogan {
-  font-size: 15px;
-  opacity: 0.85;
-  margin-bottom: 40px;
-  line-height: 1.8;
-}
-
-.feature-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.feature-list li {
-  position: relative;
-  padding-left: 26px;
-  margin-bottom: 16px;
-  font-size: 14px;
-  opacity: 0.92;
-}
-
-.feature-list li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 4px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.25);
-  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.15);
-}
-
-.feature-list li::after {
-  content: '';
-  position: absolute;
-  left: 4.5px;
-  top: 8px;
-  width: 5px;
-  height: 2.5px;
-  border-left: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
-  transform: rotate(-45deg);
-}
-
-.circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.c1 {
-  width: 420px;
-  height: 420px;
-  right: -140px;
-  top: -120px;
-}
-
-.c2 {
-  width: 260px;
-  height: 260px;
-  left: -80px;
-  bottom: -60px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.c3 {
-  width: 120px;
-  height: 120px;
-  right: 18%;
-  bottom: 14%;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* 右侧表单区 */
-.form-panel {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #ffffff;
-}
-
-.form-card {
-  width: 400px;
-  padding: 20px;
-}
-
-.form-card h2 {
-  font-size: 26px;
-  margin: 0 0 8px;
-  color: #111827;
-}
-
-.tip {
-  color: #9ca3af;
-  font-size: 14px;
-  margin: 0 0 32px;
-}
-
-.login-security-tip {
-  margin-top: 12px;
-  font-size: 12px;
-  color: #9ca3af;
-  text-align: center;
-}
-
-.login-btn {
-  width: 100%;
-  height: 46px;
-  font-size: 16px;
-  letter-spacing: 6px;
-  border-radius: 10px;
-  margin-top: 6px;
-}
-
-.captcha-row {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-}
-
-.captcha-img {
-  height: 40px;
-  border-radius: 8px;
-  cursor: pointer;
-  border: 1px solid #e5e7eb;
-  flex-shrink: 0;
-}
-
-.demo-accounts {
-  margin-top: 36px;
-  padding: 16px;
-  background: #f8faf9;
-  border-radius: 12px;
-}
-
-.demo-title {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-bottom: 10px;
-}
-
-.demo-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.demo-row:hover {
-  background: #eef7f2;
-}
-
-.account-text {
-  font-size: 13px;
-  color: #4b5563;
-  font-family: Consolas, monospace;
-}
-
-@media (max-width: 900px) {
-  .brand-panel {
-    display: none;
-  }
+.login-page { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.brand-panel { display: grid; align-items: center; background: var(--pine); color: var(--paper); padding: clamp(26px, 7vw, 98px); }
+.brand-content { width: min(100%, 430px); justify-self: end; }
+.brand-lockup small, .back-to-store { color: var(--lime); }
+.brand-title { font-size: clamp(31px, 5vw, 67px); font-weight: 750; color: var(--lime); letter-spacing: -.06em; line-height: 1.1; margin: 30px 0 9px; }
+.back-to-store { display: inline-block; margin-top: 16px; }
+.form-panel { display: grid; align-items: center; padding: clamp(24px, 6vw, 80px); }
+.form-card { width: min(100%, 390px); }
+.form-card h1 { color: var(--pine); font-size: clamp(28px, 4vw, 44px); margin: 0; }
+.tip { color: var(--muted); margin: 8px 0 22px; }
+.login-btn { width: 100%; }
+.login-security-tip { font-size: 12px; margin-top: 14px; color: var(--muted); }
+.captcha-row { display: flex; width: 100%; align-items: center; gap: 6px; }
+.captcha-button { flex: 0 0 90px; padding: 0; background: transparent; border: 0; }
+.captcha-img { display: block; max-width: 100%; }
+@media (max-width: 680px) {
+  .login-page { grid-template-columns: 1fr; align-content: start; }
+  .brand-content { justify-self: start; }
+  .brand-title { margin-top: 17px; }
+  .form-card { margin-inline: auto; }
 }
 </style>

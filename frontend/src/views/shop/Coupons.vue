@@ -9,7 +9,8 @@
 
     <!-- 领券中心 -->
     <template v-if="activeTab === 'available'">
-      <div v-if="available.length" class="coupon-grid">
+      <load-state v-if="loading || couponError" :loading="loading" :error="couponError" @retry="loadCoupons('available')" />
+      <div v-else-if="available.length" class="coupon-grid">
         <div v-for="coupon in available" :key="coupon.id" class="coupon-card" :class="{ disabled: coupon.received || coupon.remaining <= 0 }">
           <div class="coupon-value">
             <template v-if="coupon.type === 1">
@@ -44,7 +45,8 @@
         </el-empty>
       </div>
       <template v-else>
-        <div v-if="mine.length" class="coupon-grid">
+        <load-state v-if="loading || couponError" :loading="loading" :error="couponError" @retry="loadCoupons('mine')" />
+        <div v-else-if="mine.length" class="coupon-grid">
           <div v-for="coupon in mine" :key="coupon.id" class="coupon-card" :class="{ disabled: coupon.status !== 0 }">
             <div class="coupon-value">
               <template v-if="coupon.type === 1">
@@ -73,6 +75,7 @@
 </template>
 
 <script setup>
+import LoadState from '@/components/LoadState.vue'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -87,23 +90,37 @@ const shopStore = useShopStore()
 const activeTab = ref(route.query.tab === 'mine' ? 'mine' : 'available')
 const available = ref([])
 const mine = ref([])
+const loading = ref(false)
+const couponError = ref(false)
+let version = 0
 
-onMounted(async () => {
-  if (shopStore.token) {
-    ;[available.value, mine.value] = await Promise.all([getAvailableCoupons(), getMyCoupons()])
-  }
+onMounted(() => {
+  if (shopStore.token) loadCoupons(activeTab.value)
 })
+
+async function loadCoupons(tab) {
+  const request = ++version
+  loading.value = true
+  couponError.value = false
+  try {
+    const getCoupons = tab === 'mine' ? getMyCoupons : getAvailableCoupons
+    const coupons = await getCoupons()
+    if (request !== version) return
+    const target = tab === 'mine' ? mine : available
+    target.value = coupons
+  } catch {
+    if (request === version) couponError.value = true
+  } finally {
+    if (request === version) loading.value = false
+  }
+}
 
 async function handleTabChange(tab) {
   if (!shopStore.token) {
     router.push({ path: '/shop/login', query: { redirect: '/shop/coupons?tab=' + tab } })
     return
   }
-  if (tab === 'mine') {
-    mine.value = await getMyCoupons()
-  } else {
-    available.value = await getAvailableCoupons()
-  }
+  await loadCoupons(tab)
 }
 
 async function handleReceive(coupon) {
@@ -113,7 +130,7 @@ async function handleReceive(coupon) {
   }
   await receiveCoupon(coupon.id)
   ElMessage.success('领取成功，可在「我的优惠券」中查看')
-  available.value = await getAvailableCoupons()
+  await loadCoupons('available')
 }
 </script>
 
@@ -227,4 +244,11 @@ async function handleReceive(coupon) {
     grid-template-columns: 1fr;
   }
 }
+
+.coupon-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 315px), 1fr)); }
+.coupon-card { border: 1px solid var(--line); box-shadow: none; }
+.coupon-card::before { background: var(--action); }
+.coupon-value { color: var(--price); }
+.coupon-info { overflow-wrap: anywhere; }
+@media (max-width: 390px) { .coupon-card { gap: 8px; } .coupon-value { width: 79px; } }
 </style>
